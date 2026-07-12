@@ -1,0 +1,8 @@
+# Secrets — never commit the real env (use .env.example as the template)
+.env
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/

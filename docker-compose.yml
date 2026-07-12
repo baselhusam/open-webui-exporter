@@ -1,0 +1,35 @@
+# Open WebUI only — the application by itself.
+#
+#   docker compose up -d          # start Open WebUI on http://localhost:3000
+#   docker compose down           # stop it (data is kept in the named volume)
+#
+# For the observability stack (exporter + Prometheus + Grafana) run the second
+# file *in addition* to this one:
+#   docker compose -f docker-compose.monitoring.yml up -d
+#
+# Ollama is NOT run in Docker here. On macOS, Docker Desktop cannot access the
+# Metal GPU, so a containerized Ollama falls back to slow CPU-only inference.
+# Run Ollama natively on the Mac (the app or `brew install ollama`) so it uses
+# Metal acceleration, and point open-webui at it via host.docker.internal.
+
+services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    restart: unless-stopped
+    ports:
+      - "3000:8080"
+    environment:
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      # Replace this with a random string for production use
+      - WEBUI_SECRET_KEY=dev_secret_key
+      # WebSocket delivery was stalling (response generated but UI needed a
+      # refresh to show it) - fall back to HTTP polling instead
+      - ENABLE_WEBSOCKET_SUPPORT=False
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - open-webui_data:/app/backend/data
+
+volumes:
+  open-webui_data:

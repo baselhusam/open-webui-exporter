@@ -1,0 +1,11 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: openwebui-prometheus
+    access: proxy
+    # Reachable by service name on the monitoring compose network.
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
