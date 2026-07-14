@@ -6,7 +6,6 @@ from collectors.client import get_json
 from metrics import (
     GROUP_MEMBERS,
     GROUPS_TOTAL,
-    USER_ESTIMATED_COST_USD,
     USER_INPUT_TOKENS_TOTAL,
     USER_MESSAGES_TOTAL,
     USER_OUTPUT_TOKENS_TOTAL,
@@ -46,7 +45,13 @@ def collect_users(session, base_url):
     USERS_ACTIVE_TOTAL.labels(window="7d").set(active_7d)
 
 
-def collect_user_analytics(session, base_url, cost_per_1k_input=0.0, cost_per_1k_output=0.0):
+def collect_user_analytics(session, base_url):
+    """Per-user message/token totals. Returns {user_id: (name, email)}.
+
+    That map feeds collect_chats_stats, which owns per-user *cost* — this
+    endpoint reports a user's tokens but not which model burned them, so it
+    can't price a mix of models on its own.
+    """
     data = get_json(session, base_url, "/api/v1/analytics/users")
     entries = data.get("users", [])
 
@@ -54,13 +59,15 @@ def collect_user_analytics(session, base_url, cost_per_1k_input=0.0, cost_per_1k
     USER_INPUT_TOKENS_TOTAL.clear()
     USER_OUTPUT_TOKENS_TOTAL.clear()
     USER_TOTAL_TOKENS.clear()
-    USER_ESTIMATED_COST_USD.clear()
 
+    user_map = {}
     for entry in entries:
         email = entry.get("email") or "unknown"
         # Display name for dashboards; fall back to email when it's blank.
         name = entry.get("name") or email
         labels = {"user": name, "email": email}
+        if entry.get("user_id"):
+            user_map[entry["user_id"]] = (name, email)
 
         input_tokens = entry.get("input_tokens", 0)
         output_tokens = entry.get("output_tokens", 0)
@@ -71,8 +78,7 @@ def collect_user_analytics(session, base_url, cost_per_1k_input=0.0, cost_per_1k
         USER_OUTPUT_TOKENS_TOTAL.labels(**labels).set(output_tokens)
         USER_TOTAL_TOKENS.labels(**labels).set(total_tokens)
 
-        cost = (input_tokens / 1000.0) * cost_per_1k_input + (output_tokens / 1000.0) * cost_per_1k_output
-        USER_ESTIMATED_COST_USD.labels(**labels).set(cost)
+    return user_map
 
 
 def collect_groups(session, base_url):

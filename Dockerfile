@@ -5,7 +5,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY exporter.py metrics.py ./
+COPY exporter.py metrics.py pricing.py ./
 COPY collectors ./collectors
 
 EXPOSE 9090

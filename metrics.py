@@ -38,8 +38,23 @@ USER_OUTPUT_TOKENS_TOTAL = Gauge("openwebui_user_output_tokens_total", "Output t
 USER_TOTAL_TOKENS = Gauge("openwebui_user_total_tokens", "Total tokens (input+output) per user", ["user", "email"])
 USER_ESTIMATED_COST_USD = Gauge(
     "openwebui_user_estimated_cost_usd",
-    "Estimated spend per user from configured $/1k-token rates",
+    "Estimated spend per user, priced per model from pricing.py",
     ["user", "email"],
+)
+
+# Cost. Open WebUI reports tokens but never prices, so spend is reconstructed
+# from the pricing.py rate table applied to each assistant message's usage
+# block. MODEL_PRICE_USD_PER_1M exposes the rate card itself, so the dashboard
+# can show which price produced a given cost.
+MODEL_PRICE_USD_PER_1M = Gauge(
+    "openwebui_model_price_usd_per_1m_tokens",
+    "Configured price per 1M tokens for each model",
+    ["model", "token_type"],
+)
+MODEL_INPUT_TOKENS_TOTAL = Gauge("openwebui_model_input_tokens_total", "Input tokens per model", ["model"])
+MODEL_OUTPUT_TOKENS_TOTAL = Gauge("openwebui_model_output_tokens_total", "Output tokens per model", ["model"])
+MODEL_ESTIMATED_COST_USD = Gauge(
+    "openwebui_model_estimated_cost_usd", "Estimated spend per model", ["model"]
 )
 
 # Engagement (derived from /api/v1/chats/stats/usage)
