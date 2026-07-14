@@ -22,7 +22,7 @@ export $(cat .env | xargs)
 curl http://localhost:9090/metrics
 
 # Compile-check all Python files (no test suite exists yet)
-.venv/bin/python -m py_compile exporter.py metrics.py collectors/*.py
+.venv/bin/python -m py_compile exporter.py metrics.py collectors/*.py scripts/*.py
 
 # Run the whole thing with Docker Compose (app first, then monitoring)
 docker compose up -d                                          # Open WebUI on :3000
@@ -30,6 +30,13 @@ docker compose -f docker-compose.monitoring.yml up -d --build # exporter/prometh
 
 # Regenerate the Grafana dashboard JSON after editing the layout builder
 .venv/bin/python grafana/build_dashboard.py
+
+# Seed / tear down realistic mock data for demoing the dashboard.
+# NOTE: run from the host, so override BASE_URL to localhost — .env points the
+# exporter *container* at host.docker.internal, which won't resolve on the host.
+export $(cat .env | xargs)
+OPENWEBUI_BASE_URL=http://localhost:3000 .venv/bin/python scripts/seed_mock_data.py
+OPENWEBUI_BASE_URL=http://localhost:3000 .venv/bin/python scripts/teardown_mock_data.py
 ```
 
 There is no test suite, linter, or formatter configured — `py_compile` is currently the only automated check.
@@ -46,7 +53,13 @@ There is no test suite, linter, or formatter configured — `py_compile` is curr
 
 **`collectors/client.py::get_json`** is the single shared HTTP call wrapper (Bearer auth session, 5s timeout, raises on any failure) — all collectors route through it rather than calling `requests` directly.
 
-**Known API gaps** (see notes in `README.md` and comments in `collectors/feedback.py`): `/api/v1/users/` is only fetched as a single page (no pagination yet). Feedback counts are aggregated client-side from `/api/v1/evaluations/feedbacks/all/export` (the `/feedbacks/models` endpoint only returns a bare `list[str]` of model ids with no counts, so it is not used).
+**Endpoint scope matters: some Open WebUI endpoints are admin-wide, others are scoped to the calling user.** `/api/v1/analytics/*` and `/api/v1/evaluations/feedbacks/all/export` are admin-wide (they see every user). But `/api/v1/chats/stats/usage` and `/api/v1/chats/archived/count` are scoped to the *requester* — using them undercounts to just the API key's own chats. So `collect_chats_stats` instead pulls the admin-wide `/api/v1/chats/all/db` and aggregates message counts, user/assistant splits, content lengths, tags, archived count, and per-model response times client-side. This is a heavier per-poll fetch (full chat objects), but it's the same global-pull pattern the feedback collector already uses, and it's the only way these totals are correct on a multi-user instance.
+
+**Per-model token usage is not exposed.** `/api/v1/analytics/models` returns only `count`/`unique_users`/`unique_chats` per model — no token fields. Token economics (input/output/total, and the configurable `COST_PER_1K_*` estimate) is therefore per-user and global only, from `/api/v1/analytics/users`, which *does* return `name`, `email`, and token counts. `collect_user_analytics` takes the two cost rates as args (wired via a lambda in `exporter.py`'s `STEPS`).
+
+**Known API gaps** (see notes in `README.md` and comments in `collectors/feedback.py`): `/api/v1/users/` is only fetched as a single page (no pagination yet). Feedback counts are aggregated client-side from `/api/v1/evaluations/feedbacks/all/export` (the `/feedbacks/models` endpoint only returns a bare `list[str]` of model ids with no counts, so it is not used); the Arena `/leaderboard` stays empty until users run side-by-side battles, which is separate from thumbs up/down. Open WebUI reports `average_assistant_message_content_length` as 0 for older chats, so assistant-length is computed from raw message `content` in `collect_chats_stats`.
+
+**Mock-data scripts** (`scripts/seed_mock_data.py`, `scripts/teardown_mock_data.py`) populate a real instance with users/groups/knowledge-bases/chats/feedback purely through the REST API (creating users, signing in as each, and POSTing chats whose assistant messages carry fabricated `usage` blocks — no inference). Everything is namespaced (`@mock.local` emails, `[mock]`-suffixed groups/KBs) so teardown can find and delete it.
 
 ## Grafana dashboard
 
