@@ -271,7 +271,7 @@ panels.append(stat(
     "sum(openwebui_model_feedback_positive_total) / "
     "clamp_min(sum(openwebui_model_feedback_positive_total) + sum(openwebui_model_feedback_negative_total), 1)",
     15, y, 3, 4, unit="percentunit", color=GREEN, sparkline=False, no_value="N/A"))
-panels.append(stat("Est. Spend", "sum(openwebui_user_estimated_cost_usd)", 18, y, 3, 4,
+panels.append(stat("Est. Spend", "sum(openwebui_model_estimated_cost_usd)", 18, y, 3, 4,
                    unit="currencyUSD", color=AMBER, decimals=2, sparkline=False))
 panels.append(stat("Exporter Health", "openwebui_exporter_scrape_success", 21, y, 3, 4,
                    color=GREEN, sparkline=False, mappings=HEALTH_MAP,
@@ -310,9 +310,33 @@ panels.append(timeseries("Cumulative Messages", 16, y, 8, 8, [
     {"expr": "openwebui_assistant_messages_total", "legendFormat": "Assistant", "refId": "B"},
 ], fill=15))
 
-# ============================================================ MODELS & PROVIDERS
-panels.append(row("Models & Providers", 23))
+# ============================================================ COST & SPEND
+# Cost is the one number Open WebUI never reports; it's reconstructed by the
+# exporter from pricing.py. The rate card sits next to the spend it produced so
+# a reader can see *which* price explains a given bar.
+panels.append(row("Cost & Spend", 23))
 y = 24
+panels.append(table("Model Rate Card ($/1M tokens)", "openwebui_model_price_usd_per_1m_tokens",
+                    0, y, 8, 8, legend="{{model}} {{token_type}}",
+                    no_value="No priced models yet",
+                    transformations=[
+                        {"id": "labelsToFields", "options": {"mode": "columns"}},
+                        {"id": "organize", "options": {
+                            "excludeByName": {"Time": True, "__name__": True,
+                                              "instance": True, "job": True},
+                            "renameByName": {"Value": "$ / 1M"}}},
+                    ]))
+panels.append(bargauge("Spend by Model", "openwebui_model_estimated_cost_usd",
+                       8, y, 8, 8, legend="{{model}}", unit="currencyUSD",
+                       scheme="continuous-GrYlRd", decimals=4))
+panels.append(timeseries("Cumulative Spend", 16, y, 8, 8, [
+    {"expr": "sum(openwebui_model_estimated_cost_usd)", "legendFormat": "Total", "refId": "A"},
+    {"expr": "openwebui_model_estimated_cost_usd", "legendFormat": "{{model}}", "refId": "B"},
+], unit="currencyUSD", fill=15))
+
+# ============================================================ MODELS & PROVIDERS
+panels.append(row("Models & Providers", 32))
+y = 33
 panels.append(donut("Provider Breakdown", "openwebui_provider_models_total", 0, y, 8, 8,
                     legend="{{owned_by}}",
                     color_overrides={"ollama": BLUE, "arena": VIOLET, "openai": TEAL}))
@@ -322,14 +346,14 @@ panels.append(bargauge("Top Models by Unique Users", "topk(10, openwebui_model_u
                        16, y, 8, 8, legend="{{model}}", scheme="continuous-purples"))
 
 # ============================================================ MODEL CATALOG
-panels.append(row("Model Catalog & Capabilities", 32))
-y = 33
+panels.append(row("Model Catalog & Capabilities", 41))
+y = 42
 panels.append(table("Model Catalog", "openwebui_model_info", 0, y, 14, 8,
                     legend="{{model}}", no_value="—",
                     transformations=ONLY_LABELS(None)))
 panels.append(bargauge("Model Size on Disk", "openwebui_model_size_bytes",
                        14, y, 10, 8, legend="{{model}}", unit="bytes", scheme="continuous-BlYlRd"))
-y = 41
+y = 50
 panels.append(bargauge("Context Length by Model", "openwebui_model_context_length",
                        0, y, 12, 7, legend="{{model}}", unit="short", scheme="continuous-blues"))
 panels.append(table("Model Capabilities", "openwebui_model_capability",
@@ -338,8 +362,8 @@ panels.append(table("Model Capabilities", "openwebui_model_capability",
                     transformations=ONLY_LABELS(None)))
 
 # ============================================================ QUALITY & FEEDBACK
-panels.append(row("Quality & Feedback", 48))
-y = 49
+panels.append(row("Quality & Feedback", 57))
+y = 58
 panels.append(stat("Feedback Total", "openwebui_feedback_total", 0, y, 6, 4, color=BLUE, sparkline=False))
 panels.append(stat("With Comments", "openwebui_feedback_with_comment_total", 6, y, 6, 4,
                    color=VIOLET, sparkline=False))
@@ -348,7 +372,7 @@ panels.append(stat("Feedback Coverage",
                    12, y, 6, 4, unit="percentunit", color=TEAL, sparkline=False, no_value="N/A"))
 panels.append(stat("Rated Models", "count(openwebui_model_satisfaction_ratio)", 18, y, 6, 4,
                    color=AMBER, sparkline=False, no_value="0"))
-y = 53
+y = 62
 fb_overrides = [
     {"matcher": {"id": "byRegexp", "options": ".*positive.*"},
      "properties": [{"id": "color", "value": {"mode": "fixed", "fixedColor": GREEN}}]},
@@ -366,8 +390,8 @@ panels.append(table("Arena Leaderboard", "openwebui_model_leaderboard_rank", 20,
                     legend="{{model}}", no_value="No arena battles yet"))
 
 # ============================================================ ENGAGEMENT & CONTENT
-panels.append(row("Engagement & Content", 61))
-y = 62
+panels.append(row("Engagement & Content", 70))
+y = 71
 panels.append(stat("Avg Messages / Chat", "openwebui_avg_messages_per_chat", 0, y, 6, 4,
                    color=VIOLET, sparkline=False, decimals=1))
 panels.append(stat("Avg User Msg Length", "openwebui_avg_user_message_length_chars", 6, y, 6, 4,
@@ -376,7 +400,7 @@ panels.append(stat("Avg Assistant Msg Length", "openwebui_avg_assistant_message_
                    unit="short", color=TEAL, sparkline=False, decimals=0))
 panels.append(stat("Archived Chats", "openwebui_chats_archived_total", 18, y, 6, 4,
                    color=SLATE, sparkline=False))
-y = 66
+y = 75
 panels.append(barchart("Chats by Topic Tag", 0, y, 12, 7, [
     {"expr": "topk(15, openwebui_chat_tag_total)", "legendFormat": "{{tag}}", "instant": True, "refId": "A"},
 ]))
@@ -388,8 +412,8 @@ panels.append(barchart("Content Inventory", 12, y, 12, 7, [
 ]))
 
 # ============================================================ PERFORMANCE & TRENDS
-panels.append(row("Performance & Usage Trends", 73))
-y = 74
+panels.append(row("Performance & Usage Trends", 82))
+y = 83
 panels.append(timeseries("Average Response Time per Model", 0, y, 12, 8, [
     {"expr": "openwebui_chat_avg_response_seconds", "legendFormat": "{{model}}", "refId": "A"},
 ], unit="s", fill=25))
@@ -398,8 +422,8 @@ panels.append(timeseries("Messages per Day by Model", 12, y, 12, 8, [
 ], unit="short", style="bars", fill=70))
 
 # ============================================================ EXPORTER HEALTH
-panels.append(row("Exporter Health", 82))
-y = 83
+panels.append(row("Exporter Health", 91))
+y = 92
 panels.append(timeseries("Scrape Errors by Endpoint", 0, y, 16, 6, [
     {"expr": "sum by (endpoint) (increase(openwebui_exporter_scrape_errors_total[5m]))", "legendFormat": "{{endpoint}}", "refId": "A"},
 ], unit="short", color=RED, fill=25))
@@ -413,7 +437,7 @@ dashboard = {
     "style": "dark",
     "timezone": "browser",
     "schemaVersion": 39,
-    "version": 5,
+    "version": 6,
     "refresh": "30s",
     "editable": True,
     "graphTooltip": 1,
