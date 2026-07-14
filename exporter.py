@@ -13,8 +13,8 @@ import time
 import requests
 from prometheus_client import start_http_server
 
-from collectors.chats import collect_chats_archived, collect_chats_stats
-from collectors.content import collect_knowledge, collect_tools
+from collectors.chats import collect_chats_stats
+from collectors.content import collect_functions, collect_knowledge, collect_prompts, collect_tools
 from collectors.feedback import collect_feedback, collect_leaderboard
 from collectors.models import collect_model_analytics, collect_models
 from collectors.users import collect_groups, collect_user_analytics, collect_users
@@ -31,20 +31,27 @@ BASE_URL = os.environ.get("OPENWEBUI_BASE_URL", "http://localhost:3000").rstrip(
 API_KEY = os.environ.get("OPENWEBUI_API_KEY", "")
 POLL_INTERVAL_SECONDS = int(os.environ.get("POLL_INTERVAL_SECONDS", "30"))
 EXPORTER_PORT = int(os.environ.get("EXPORTER_PORT", "9090"))
+# Optional $/1k-token rates for the estimated-cost metric. Zero (default) means
+# cost is reported as 0 — sensible for local Ollama; set these when routing to
+# paid providers like OpenAI.
+COST_PER_1K_INPUT_TOKENS = float(os.environ.get("COST_PER_1K_INPUT_TOKENS", "0"))
+COST_PER_1K_OUTPUT_TOKENS = float(os.environ.get("COST_PER_1K_OUTPUT_TOKENS", "0"))
 
 # (name, callable) pairs run each poll cycle. Each is isolated: a failure in
 # one does not prevent the others from running, and increments the
 # per-endpoint error counter instead of crashing the exporter.
 STEPS = [
     ("users", collect_users),
-    ("user_analytics", collect_user_analytics),
+    ("user_analytics", lambda s, b: collect_user_analytics(
+        s, b, COST_PER_1K_INPUT_TOKENS, COST_PER_1K_OUTPUT_TOKENS)),
     ("groups", collect_groups),
     ("chats_stats", collect_chats_stats),
-    ("chats_archived", collect_chats_archived),
     ("feedback", collect_feedback),
     ("leaderboard", collect_leaderboard),
     ("knowledge", collect_knowledge),
     ("tools", collect_tools),
+    ("prompts", collect_prompts),
+    ("functions", collect_functions),
 ]
 
 

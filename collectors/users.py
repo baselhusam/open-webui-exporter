@@ -6,9 +6,11 @@ from collectors.client import get_json
 from metrics import (
     GROUP_MEMBERS,
     GROUPS_TOTAL,
+    USER_ESTIMATED_COST_USD,
     USER_INPUT_TOKENS_TOTAL,
     USER_MESSAGES_TOTAL,
     USER_OUTPUT_TOKENS_TOTAL,
+    USER_TOTAL_TOKENS,
     USERS_ACTIVE_TOTAL,
     USERS_TOTAL,
 )
@@ -44,19 +46,33 @@ def collect_users(session, base_url):
     USERS_ACTIVE_TOTAL.labels(window="7d").set(active_7d)
 
 
-def collect_user_analytics(session, base_url):
+def collect_user_analytics(session, base_url, cost_per_1k_input=0.0, cost_per_1k_output=0.0):
     data = get_json(session, base_url, "/api/v1/analytics/users")
     entries = data.get("users", [])
 
     USER_MESSAGES_TOTAL.clear()
     USER_INPUT_TOKENS_TOTAL.clear()
     USER_OUTPUT_TOKENS_TOTAL.clear()
+    USER_TOTAL_TOKENS.clear()
+    USER_ESTIMATED_COST_USD.clear()
 
     for entry in entries:
-        email = entry.get("email", "unknown")
-        USER_MESSAGES_TOTAL.labels(user_email=email).set(entry.get("count", 0))
-        USER_INPUT_TOKENS_TOTAL.labels(user_email=email).set(entry.get("input_tokens", 0))
-        USER_OUTPUT_TOKENS_TOTAL.labels(user_email=email).set(entry.get("output_tokens", 0))
+        email = entry.get("email") or "unknown"
+        # Display name for dashboards; fall back to email when it's blank.
+        name = entry.get("name") or email
+        labels = {"user": name, "email": email}
+
+        input_tokens = entry.get("input_tokens", 0)
+        output_tokens = entry.get("output_tokens", 0)
+        total_tokens = entry.get("total_tokens", input_tokens + output_tokens)
+
+        USER_MESSAGES_TOTAL.labels(**labels).set(entry.get("count", 0))
+        USER_INPUT_TOKENS_TOTAL.labels(**labels).set(input_tokens)
+        USER_OUTPUT_TOKENS_TOTAL.labels(**labels).set(output_tokens)
+        USER_TOTAL_TOKENS.labels(**labels).set(total_tokens)
+
+        cost = (input_tokens / 1000.0) * cost_per_1k_input + (output_tokens / 1000.0) * cost_per_1k_output
+        USER_ESTIMATED_COST_USD.labels(**labels).set(cost)
 
 
 def collect_groups(session, base_url):
