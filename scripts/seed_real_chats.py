@@ -30,6 +30,12 @@ MOCK_DOMAIN = "@mock.local"
 PASSWORD = "mockpass123"
 CHATS_PER_USER = int(os.environ.get("CHATS_PER_USER", "2"))
 PAUSE_SECONDS = float(os.environ.get("PAUSE_SECONDS", "1.5"))
+# APPEND=1 keeps each user's existing chats and adds on top, instead of wiping
+# them first — use it to grow volume without re-running inference you already paid for.
+APPEND = os.environ.get("APPEND", "0") == "1"
+# Up to this many user->assistant turns per chat (each turn is another real
+# completion, with the running conversation fed back to the model).
+MAX_TURNS = int(os.environ.get("MAX_TURNS", "3"))
 # agent-model first: it returns content and is the fastest here. qwen3.5:2b is a
 # "thinking" model, so it needs think=False to emit visible content.
 MODELS = os.environ.get("REAL_CHAT_MODELS", "agent-model,qwen3.5:2b").split(",")
@@ -49,6 +55,16 @@ PROMPTS = [
     ("data-analysis", "What metric should I use for imbalanced classification, and why?"),
     ("support", "How would you explain resetting a password to a non-technical user?"),
     ("support", "A web dashboard won't load. List three things to check first."),
+]
+
+# Generic follow-ups, appended as real second/third turns so the model answers
+# them with the earlier exchange in context.
+FOLLOWUPS = [
+    "Can you show a short code example?",
+    "Why is that the case?",
+    "What are the main trade-offs?",
+    "Can you summarise that in one sentence?",
+    "What's a common mistake people make here?",
 ]
 
 
@@ -78,23 +94,30 @@ def delete_existing_chats(user_headers):
     return len(chats) if isinstance(chats, list) else 0
 
 
-def save_chat(user_headers, title, model, tag, prompt, answer, usage):
+def save_chat(user_headers, title, model, tag, turns):
+    """turns: list of (prompt, answer, usage) — one entry per real exchange."""
     now = int(time.time())
-    uid, aid = str(uuid.uuid4()), str(uuid.uuid4())
-    messages = {
-        uid: {"id": uid, "parentId": None, "childrenIds": [aid], "role": "user",
-              "content": prompt, "timestamp": now, "models": [model]},
-        aid: {"id": aid, "parentId": uid, "childrenIds": [], "role": "assistant",
-              "content": answer, "done": True, "model": model, "modelName": model,
-              "timestamp": now + 1, "usage": usage},
-    }
+    messages = {}
+    order = []
+    prev = None
+    for i, (prompt, answer, usage) in enumerate(turns):
+        uid, aid = str(uuid.uuid4()), str(uuid.uuid4())
+        messages[uid] = {"id": uid, "parentId": prev, "childrenIds": [aid], "role": "user",
+                         "content": prompt, "timestamp": now + i * 60, "models": [model]}
+        if prev:
+            messages[prev]["childrenIds"] = [uid]
+        messages[aid] = {"id": aid, "parentId": uid, "childrenIds": [], "role": "assistant",
+                         "content": answer, "done": True, "model": model, "modelName": model,
+                         "timestamp": now + i * 60 + 1, "usage": usage}
+        order += [uid, aid]
+        prev = aid
     chat_obj = {"id": "", "title": title, "models": [model],
-                "history": {"currentId": aid, "messages": messages},
-                "messages": [messages[uid], messages[aid]], "tags": [tag],
+                "history": {"currentId": prev, "messages": messages},
+                "messages": [messages[m] for m in order], "tags": [tag],
                 "timestamp": now, "files": []}
     r = requests.post(f"{BASE_URL}/api/v1/chats/new", headers=user_headers, json={"chat": chat_obj}, timeout=15)
     r.raise_for_status()
-    return r.json()["id"], aid
+    return r.json()["id"], prev
 
 
 def main():
@@ -104,36 +127,54 @@ def main():
         raise SystemExit("No @mock.local users found — run seed_mock_data.py first.")
 
     total = len(mock) * CHATS_PER_USER
-    print(f"Generating {total} REAL chats for {len(mock)} users "
-          f"({CHATS_PER_USER} each) using models {MODELS} — sequential, this is slow.\n")
+    print(f"Generating {total} REAL chats for {len(mock)} users ({CHATS_PER_USER} each, "
+          f"up to {MAX_TURNS} turns) using models {MODELS}.\n"
+          f"Mode: {'APPEND (keeping existing chats)' if APPEND else 'REPLACE (clearing existing chats)'}. "
+          f"Sequential — this is slow.\n", flush=True)
 
     done = 0
     for u in mock:
         email = u["email"]
         token = signin(email)
         uh = {"Authorization": f"Bearer {token}"}
-        removed = delete_existing_chats(uh)
-        print(f"[{email}] cleared {removed} old chats")
+        if APPEND:
+            print(f"[{email}] appending", flush=True)
+        else:
+            print(f"[{email}] cleared {delete_existing_chats(uh)} old chats", flush=True)
 
         for i in range(CHATS_PER_USER):
             tag, prompt = random.choice(PROMPTS)
-            model = MODELS[(done) % len(MODELS)]  # alternate models across the run
+            model = MODELS[done % len(MODELS)]  # alternate models across the run
+            n_turns = random.randint(1, MAX_TURNS)
+
+            # Drive a genuine multi-turn conversation: each follow-up is answered
+            # with the running exchange in context.
+            convo = [{"role": "system", "content": "You are a helpful assistant. Be concise."}]
+            turns = []
             t0 = time.time()
-            try:
-                answer, usage = real_complete(model, [
-                    {"role": "system", "content": "You are a helpful assistant. Be concise."},
-                    {"role": "user", "content": prompt}])
-            except requests.HTTPError as e:
-                print(f"    ! completion failed on {model}: {e}")
+            for t in range(n_turns):
+                q = prompt if t == 0 else random.choice(FOLLOWUPS)
+                convo.append({"role": "user", "content": q})
+                try:
+                    answer, usage = real_complete(model, convo)
+                except requests.HTTPError as e:
+                    print(f"    ! completion failed on {model}: {e}", flush=True)
+                    break
+                if not answer.strip():
+                    print(f"    ! empty answer from {model}, ending chat early", flush=True)
+                    break
+                convo.append({"role": "assistant", "content": answer})
+                turns.append((q, answer, usage))
+                time.sleep(PAUSE_SECONDS)  # gentle on Ollama between turns
+
+            if not turns:
                 continue
-            if not answer.strip():
-                print(f"    ! empty answer from {model}, skipping")
-                continue
-            chat_id, aid = save_chat(uh, prompt[:48], model, tag, prompt, answer, usage)
+            chat_id, aid = save_chat(uh, prompt[:48], model, tag, turns)
             done += 1
             dt = time.time() - t0
-            print(f"    + [{done}/{total}] {model} {dt:4.1f}s "
-                  f"{usage.get('output_tokens','?')} out-tok  \"{prompt[:40]}\"")
+            tok = sum(t[2].get("output_tokens", 0) for t in turns)
+            print(f"    + [{done}/{total}] {model} {len(turns)}-turn {dt:5.1f}s "
+                  f"{tok} out-tok  \"{prompt[:38]}\"", flush=True)
 
             # ~55% leave feedback, biased positive
             if random.random() < 0.55:
