@@ -1,6 +1,9 @@
 # Secrets — never commit the real env (use .env.example as the template)
 .env
 
+# macOS
+.DS_Store
+
 # Python
 .venv/
 __pycache__/
