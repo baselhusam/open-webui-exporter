@@ -96,3 +96,7 @@ removes exactly that and leaves real data untouched.
 - **Endpoint scope:** analytics and feedback are admin-wide, but `/api/v1/chats/stats/usage` is scoped to the *calling* user. To get true cross-user totals, `collectors/chats.py` aggregates chat/message/tag/response-time stats from the admin-wide `/api/v1/chats/all/db` (a heavier per-poll fetch of full chat objects). Per-user token counts and cost come from `/api/v1/analytics/users`; `/api/v1/analytics/models` has no per-model token data.
 - Feedback counts (`collectors/feedback.py`) are aggregated from `/api/v1/evaluations/feedbacks/all/export` (admin-only), tallying each `rating` record's `+1`/`-1` per model (and a per-model satisfaction ratio). The Arena `/api/v1/evaluations/leaderboard` stays empty until users run side-by-side battles (separate from thumbs up/down), so that panel shows "No arena battles yet" until then.
 - The exporter tolerates individual endpoint failures: a bad API key or one down endpoint increments `openwebui_exporter_scrape_errors_total{endpoint=...}` and sets `openwebui_exporter_scrape_success` to 0, rather than crashing the process.
+
+## License
+
+[MIT](LICENSE) © Basel Husam
