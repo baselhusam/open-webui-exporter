@@ -20,7 +20,8 @@ on:
 
 env:
   # Docker Hub repository name (namespace comes from the DOCKERHUB_USERNAME secret).
-  DOCKERHUB_IMAGE_NAME: openwebui-exporter
+  # Kept identical to the GHCR name, which is derived from the repo (github.repository).
+  DOCKERHUB_IMAGE_NAME: open-webui-exporter
 
 jobs:
   build-and-push:
