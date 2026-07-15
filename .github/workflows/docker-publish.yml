@@ -1,0 +1,96 @@
+name: Build and publish Docker image
+
+# Publishes the exporter image to GitHub Container Registry (GHCR) and, when
+# Docker Hub credentials are configured as repo secrets, to Docker Hub as well.
+#
+#   - GHCR      -> ghcr.io/<owner>/<repo>            (auth via built-in GITHUB_TOKEN)
+#   - Docker Hub -> docker.io/<DOCKERHUB_USERNAME>/openwebui-exporter
+#                                                     (auth via DOCKERHUB_USERNAME + DOCKERHUB_TOKEN secrets)
+#
+# The Docker Hub push is skipped automatically if the DOCKERHUB_USERNAME secret
+# is not set, so the workflow still succeeds on GHCR alone.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  # Docker Hub repository name (namespace comes from the DOCKERHUB_USERNAME secret).
+  DOCKERHUB_IMAGE_NAME: openwebui-exporter
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # required to push to GHCR
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Detect Docker Hub credentials
+        id: dockerhub
+        run: |
+          if [ -n "${{ secrets.DOCKERHUB_USERNAME }}" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::DOCKERHUB_USERNAME secret not set — skipping Docker Hub push, publishing to GHCR only."
+          fi
+
+      - name: Set up QEMU (multi-arch emulation)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        # Skip login on pull_request from forks — GITHUB_TOKEN is read-only there.
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request' && steps.dockerhub.outputs.enabled == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Compute image names and tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/${{ github.repository }}
+            name=docker.io/${{ secrets.DOCKERHUB_USERNAME }}/${{ env.DOCKERHUB_IMAGE_NAME }},enable=${{ steps.dockerhub.outputs.enabled }}
+          # Tagging strategy:
+          #   - branch pushes      -> the branch name (e.g. `main`)
+          #   - semver tags (vX.Y.Z) -> `X.Y.Z`, `X.Y`, and `latest`
+          #   - every build        -> a short-sha tag for immutable pinning
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          # Only push on real pushes/tags/dispatch — PRs just build to validate.
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
