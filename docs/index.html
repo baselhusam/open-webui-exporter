@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Open WebUI Prometheus Exporter</title>
+<meta name="description" content="Scrape usage & performance metrics from Open WebUI, expose them to Prometheus, and chart everything in Grafana — no database credentials, just an API key.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%230b0e14'/><path d='M8 62 C24 58 32 44 48 50 S72 66 92 54' fill='none' stroke='%23F2A900' stroke-width='7' stroke-linecap='round'/><path d='M8 78 C24 74 32 62 48 68 S72 80 92 70' fill='none' stroke='%2373BF69' stroke-width='7' stroke-linecap='round'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --green: #73BF69;
+  --green-bright: #8fdc84;
+  --orange: #F2A900;
+  --orange-warm: #E8590C;
+  --radius: 14px;
+  --maxw: 1180px;
+  --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* ---------- DARK (banner vibe, default) ---------- */
+:root[data-theme="dark"] {
+  --bg: #0b0e14;
+  --bg-2: #0e121b;
+  --surface: #12161f;
+  --surface-2: #161b26;
+  --surface-hi: #1b2130;
+  --border: rgba(255,255,255,0.08);
+  --border-hi: rgba(255,255,255,0.14);
+  --text: #f4f7fb;
+  --text-2: #c3ccda;
+  --muted: #7d8798;
+  --eyebrow: var(--green);
+  --grid-stroke: rgba(255,255,255,0.028);
+  --tile-bg: #ffffff;
+  --code-bg: #0a0d13;
+  --glow-green: rgba(115,191,105,0.16);
+  --glow-orange: rgba(242,169,0,0.13);
+  --shadow: 0 24px 60px -24px rgba(0,0,0,0.7);
+}
+
+/* ---------- LIGHT (attached "vibe" — warm editorial) ---------- */
+:root[data-theme="light"] {
+  --bg: #f7f4ef;
+  --bg-2: #f2eee7;
+  --surface: #ffffff;
+  --surface-2: #fbf9f5;
+  --surface-hi: #ffffff;
+  --border: rgba(20,23,28,0.10);
+  --border-hi: rgba(20,23,28,0.18);
+  --text: #14171c;
+  --text-2: #3d434d;
+  --muted: #6b7280;
+  --eyebrow: var(--orange-warm);
+  --grid-stroke: rgba(20,23,28,0.035);
+  --tile-bg: #ffffff;
+  --code-bg: #14171c;
+  --glow-green: rgba(115,191,105,0.14);
+  --glow-orange: rgba(232,89,12,0.10);
+  --shadow: 0 22px 50px -26px rgba(20,23,28,0.28);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+body {
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+  transition: background .4s ease, color .4s ease;
+}
+::selection { background: var(--green); color: #06120a; }
+a { color: inherit; text-decoration: none; }
+img { max-width: 100%; display: block; }
+
+.wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+.mono { font-family: var(--mono); }
+
+/* ---------- grid + glow atmosphere ---------- */
+.bg-grid {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image:
+    linear-gradient(to right, var(--grid-stroke) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-stroke) 1px, transparent 1px);
+  background-size: 48px 40px;
+  mask-image: radial-gradient(ellipse 100% 70% at 50% 0%, #000 40%, transparent 100%);
+}
+.bg-glow {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(600px 340px at 82% -6%, var(--glow-orange), transparent 70%),
+    radial-gradient(560px 320px at 12% 4%, var(--glow-green), transparent 70%);
+}
+main, nav { position: relative; z-index: 1; }
+
+/* ---------- nav ---------- */
+nav {
+  position: sticky; top: 0; z-index: 50;
+  backdrop-filter: blur(14px);
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  border-bottom: 1px solid var(--border);
+}
+.nav-inner { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+.brand { display: flex; align-items: center; gap: 11px; font-weight: 800; letter-spacing: -0.02em; font-size: 15px; }
+.brand .logomark { width: 30px; height: 30px; border-radius: 9px; background: var(--bg); border: 1px solid var(--border-hi); display: grid; place-items: center; flex: none; }
+.brand .logomark svg { width: 20px; height: 20px; }
+.brand small { color: var(--muted); font-weight: 500; font-family: var(--mono); font-size: 11px; letter-spacing: 0; }
+.nav-links { display: flex; align-items: center; gap: 8px; }
+.nav-links a.txt { color: var(--text-2); font-size: 14px; font-weight: 500; padding: 8px 12px; border-radius: 9px; transition: color .2s, background .2s; }
+.nav-links a.txt:hover { color: var(--text); background: var(--surface-2); }
+.icon-btn {
+  width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text-2); display: grid; place-items: center; cursor: pointer;
+  transition: border-color .2s, color .2s, transform .2s;
+}
+.icon-btn:hover { color: var(--text); border-color: var(--border-hi); transform: translateY(-1px); }
+.icon-btn svg { width: 18px; height: 18px; }
+.theme-toggle .moon { display: none; }
+:root[data-theme="light"] .theme-toggle .sun { display: none; }
+:root[data-theme="light"] .theme-toggle .moon { display: block; }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px;
+  padding: 11px 18px; border-radius: 11px; border: 1px solid transparent; cursor: pointer;
+  transition: transform .18s ease, box-shadow .2s ease, background .2s, border-color .2s;
+  white-space: nowrap;
+}
+.btn svg { width: 16px; height: 16px; }
+.btn-primary { background: var(--green); color: #06120a; box-shadow: 0 8px 24px -8px var(--green); }
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 14px 30px -10px var(--green); }
+.btn-ghost { background: var(--surface); color: var(--text); border-color: var(--border-hi); }
+.btn-ghost:hover { transform: translateY(-2px); border-color: var(--text-2); }
+
+/* ---------- hero ---------- */
+.hero { position: relative; padding: 74px 0 40px; overflow: hidden; }
+.hero-grid { display: grid; grid-template-columns: 1.35fr 0.9fr; gap: 48px; align-items: center; }
+.eyebrow {
+  display: inline-flex; align-items: center; gap: 9px;
+  font-family: var(--mono); font-size: 12px; font-weight: 600;
+  letter-spacing: 0.18em; text-transform: uppercase; color: var(--eyebrow); margin-bottom: 22px;
+}
+.pulse { width: 9px; height: 9px; border-radius: 50%; background: var(--green); position: relative; }
+.pulse::after { content:""; position: absolute; inset: 0; border-radius: 50%; background: var(--green); animation: pulse 2s ease-out infinite; }
+@keyframes pulse { 0% { transform: scale(1); opacity: .7; } 100% { transform: scale(3.4); opacity: 0; } }
+
+h1.hero-title {
+  font-size: clamp(40px, 6.4vw, 74px); font-weight: 900; line-height: 0.98;
+  letter-spacing: -0.035em; margin-bottom: 22px;
+}
+h1.hero-title .accent {
+  background: linear-gradient(100deg, var(--orange), var(--green-bright));
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+.hero-sub { font-size: clamp(16px, 1.7vw, 19px); color: var(--text-2); max-width: 540px; margin-bottom: 14px; }
+.hero-pipe {
+  font-family: var(--mono); font-size: 13.5px; color: var(--muted);
+  display: inline-flex; align-items: center; gap: 10px; margin-bottom: 30px;
+  padding: 8px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
+}
+.hero-pipe b { color: var(--text-2); font-weight: 600; }
+.hero-pipe .arrow { color: var(--green); }
+.hero-cta { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 30px; }
+
+.trust { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.trust .label { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); }
+.tiles { display: flex; gap: 10px; }
+.tile {
+  width: 52px; height: 52px; border-radius: 14px; background: var(--tile-bg);
+  display: grid; place-items: center; box-shadow: 0 6px 16px -8px rgba(0,0,0,0.4); border: 1px solid rgba(0,0,0,0.06);
+  transition: transform .25s ease;
+}
+.tile:hover { transform: translateY(-4px) rotate(-3deg); }
+.tile img { width: 32px; height: 32px; object-fit: contain; }
+
+/* hero visual — live console card */
+.console {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 18px;
+  box-shadow: var(--shadow); overflow: hidden;
+}
+.console-bar { display: flex; align-items: center; gap: 7px; padding: 12px 15px; border-bottom: 1px solid var(--border); background: var(--surface-2); }
+.dot { width: 11px; height: 11px; border-radius: 50%; }
+.console-bar .mono { margin-left: 10px; font-size: 11.5px; color: var(--muted); }
+.console-body { padding: 16px 15px 6px; }
+.metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.metric {
+  border: 1px solid var(--border); border-radius: 11px; padding: 12px 13px; background: var(--bg-2);
+}
+.metric .k { font-family: var(--mono); font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+.metric .v { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.metric .v.g { color: var(--green); } .metric .v.o { color: var(--orange); }
+.metric .d { font-family: var(--mono); font-size: 10.5px; color: var(--muted); margin-top: 3px; }
+.sparkwrap { padding: 4px 4px 12px; }
+.sparkwrap svg { width: 100%; height: 66px; display: block; }
+
+/* ---------- section scaffolding ---------- */
+section.block { padding: 66px 0; position: relative; }
+.sec-head { max-width: 660px; margin-bottom: 44px; }
+.kicker {
+  font-family: var(--mono); font-size: 11.5px; font-weight: 600; letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--eyebrow); display: inline-flex; align-items: center; gap: 8px; margin-bottom: 14px;
+}
+.kicker::before { content: ""; width: 22px; height: 1px; background: var(--eyebrow); display: inline-block; }
+h2.sec-title { font-size: clamp(28px, 3.6vw, 40px); font-weight: 800; letter-spacing: -0.03em; line-height: 1.06; }
+.sec-head p { color: var(--muted); font-size: 16.5px; margin-top: 16px; }
+
+/* stat strip */
+.stat-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 16px; overflow: hidden; }
+.stat { background: var(--surface); padding: 24px 22px; }
+.stat .n { font-size: clamp(26px,3vw,34px); font-weight: 800; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+.stat .n .u { font-size: 0.5em; color: var(--muted); font-weight: 600; margin-left: 3px; }
+.stat .l { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-top: 7px; }
+.stat.g .n { color: var(--green); } .stat.o .n { color: var(--orange); }
+
+/* problem / solution */
+.split { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 26px; transition: border-color .25s ease, transform .25s ease;
+}
+.card.pad-lg { padding: 30px; }
+.card:hover { border-color: var(--border-hi); }
+.card .tag { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 12px; display: inline-block; }
+.tag-bad { color: var(--orange-warm); }
+.tag-good { color: var(--green); }
+.card h3 { font-size: 19px; font-weight: 700; letter-spacing: -0.01em; margin-bottom: 10px; }
+.card p { color: var(--muted); font-size: 14.5px; }
+.card ul { list-style: none; margin-top: 14px; display: flex; flex-direction: column; gap: 10px; }
+.card ul li { position: relative; padding-left: 26px; color: var(--text-2); font-size: 14.5px; }
+.card ul li::before { content: ""; position: absolute; left: 0; top: 8px; width: 14px; height: 8px; border-left: 2px solid var(--green); border-bottom: 2px solid var(--green); transform: rotate(-45deg); }
+.card ul.bad li::before { border-color: var(--orange-warm); border-left: none; border-bottom: none; top: 6px; left: 3px; width: 10px; height: 10px; content: "×"; font-family: var(--mono); font-weight: 700; color: var(--orange-warm); transform: none; }
+
+/* feature grid */
+.features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.feature { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 26px; transition: transform .25s ease, border-color .25s ease; position: relative; overflow: hidden; }
+.feature:hover { transform: translateY(-4px); border-color: var(--border-hi); }
+.feature .ic { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; margin-bottom: 18px; border: 1px solid var(--border); background: var(--bg-2); }
+.feature .ic svg { width: 22px; height: 22px; stroke: var(--green); fill: none; stroke-width: 1.7; }
+.feature:nth-child(3n-1) .ic svg { stroke: var(--orange); }
+.feature h3 { font-size: 17px; font-weight: 700; margin-bottom: 9px; letter-spacing: -0.01em; }
+.feature p { color: var(--muted); font-size: 14px; }
+
+/* screenshots */
+.shots { display: flex; flex-direction: column; gap: 20px; }
+.shot {
+  border: 1px solid var(--border); border-radius: 16px; overflow: hidden; background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.shot .cap { display: flex; align-items: center; gap: 10px; padding: 13px 18px; border-bottom: 1px solid var(--border); background: var(--surface-2); font-size: 13.5px; color: var(--text-2); font-weight: 500; }
+.shot .cap .mono { color: var(--muted); font-size: 11.5px; }
+.shot img { width: 100%; height: auto; display: block; }
+
+/* quickstart */
+.steps { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+.step { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column; }
+.step-head { padding: 18px 22px 4px; }
+.step-num { font-family: var(--mono); font-size: 12px; color: var(--green); font-weight: 700; }
+.step h3 { font-size: 17px; font-weight: 700; margin: 6px 0 4px; letter-spacing: -0.01em; }
+.step p { color: var(--muted); font-size: 13.5px; padding: 0 22px 12px; }
+pre {
+  background: var(--code-bg); margin: 0; padding: 16px 20px; overflow-x: auto; flex: 1;
+  border-top: 1px solid var(--border);
+}
+pre code { font-family: var(--mono); font-size: 12.5px; line-height: 1.7; color: #d6deea; white-space: pre; }
+:root[data-theme="light"] pre code { color: #e4e9f0; }
+.c-cmt { color: #5b6675; } .c-key { color: var(--orange); } .c-str { color: var(--green-bright); } .c-fn { color: #7cc6ff; }
+
+/* architecture */
+.arch { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; }
+.arch .card h3 { display: flex; align-items: center; gap: 10px; }
+.arch .card h3 .n { font-family: var(--mono); font-size: 13px; color: var(--muted); font-weight: 600; }
+
+/* callout */
+.callout {
+  border: 1px solid var(--border); border-left: 3px solid var(--orange); border-radius: var(--radius);
+  background: var(--surface); padding: 22px 26px; display: flex; gap: 16px; align-items: flex-start;
+}
+.callout svg { width: 22px; height: 22px; stroke: var(--orange); fill: none; stroke-width: 1.8; flex: none; margin-top: 2px; }
+.callout p { color: var(--text-2); font-size: 14.5px; }
+.callout strong { color: var(--text); }
+.callout code { font-family: var(--mono); font-size: 0.9em; background: var(--bg-2); padding: 1px 6px; border-radius: 5px; color: var(--orange); }
+
+/* cta band */
+.cta-band { text-align: center; padding: 70px 0; }
+.cta-band h2 { font-size: clamp(30px, 4vw, 46px); font-weight: 900; letter-spacing: -0.035em; line-height: 1.02; margin-bottom: 16px; }
+.cta-band p { color: var(--muted); font-size: 17px; max-width: 520px; margin: 0 auto 28px; }
+.cta-band .hero-cta { justify-content: center; }
+
+/* footer */
+footer { border-top: 1px solid var(--border); padding: 40px 0; }
+.foot-inner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 18px; }
+.foot-inner .brand small { font-size: 12px; }
+.foot-links { display: flex; gap: 22px; }
+.foot-links a { color: var(--muted); font-size: 14px; transition: color .2s; }
+.foot-links a:hover { color: var(--text); }
+.foot-note { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+
+/* reveal on scroll */
+.reveal { opacity: 0; transform: translateY(22px); transition: opacity .7s cubic-bezier(.2,.7,.2,1), transform .7s cubic-bezier(.2,.7,.2,1); }
+.reveal.in { opacity: 1; transform: none; }
+
+@media (max-width: 940px) {
+  .hero-grid { grid-template-columns: 1fr; gap: 40px; }
+  .split, .steps, .arch { grid-template-columns: 1fr; }
+  .features { grid-template-columns: 1fr 1fr; }
+  .stat-strip { grid-template-columns: 1fr 1fr; }
+  .nav-links a.txt { display: none; }
+}
+@media (max-width: 560px) {
+  .features { grid-template-columns: 1fr; }
+  .hero { padding-top: 48px; }
+  .metrics-grid { grid-template-columns: 1fr 1fr; }
+  section.block { padding: 52px 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+  .reveal { opacity: 1; transform: none; }
+}
+</style>
+</head>
+<body>
+<div class="bg-grid"></div>
+<div class="bg-glow"></div>
+
+<!-- NAV -->
+<nav>
+  <div class="wrap nav-inner">
+    <a class="brand" href="#top">
+      <span class="logomark">
+        <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+          <path d="M8 58 C24 54 32 40 48 46 S72 62 92 50" fill="none" stroke="#F2A900" stroke-width="8" stroke-linecap="round"/>
+          <path d="M8 76 C24 72 32 60 48 66 S72 78 92 68" fill="none" stroke="#73BF69" stroke-width="8" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <span>Open WebUI Exporter<br><small>prometheus · grafana</small></span>
+    </a>
+    <div class="nav-links">
+      <a class="txt" href="#features">Features</a>
+      <a class="txt" href="#dashboard">Dashboard</a>
+      <a class="txt" href="#quickstart">Quick start</a>
+      <a class="txt" href="https://github.com/baselhusam/open-webui-exporter#readme">Docs</a>
+      <button class="icon-btn theme-toggle" id="themeBtn" aria-label="Toggle color theme" title="Toggle theme">
+        <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/></svg>
+        <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+      <a class="icon-btn" href="https://github.com/baselhusam/open-webui-exporter" aria-label="GitHub repository" title="GitHub">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.2.8-.5v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.6.8.5 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
+      </a>
+    </div>
+  </div>
+</nav>
+
+<main id="top">
+
+<!-- HERO -->
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <span class="eyebrow"><span class="pulse"></span> Prometheus Exporter</span>
+      <h1 class="hero-title">Open WebUI<br>metrics, <span class="accent">exported.</span></h1>
+      <p class="hero-sub">Poll Open WebUI's REST API, expose it as Prometheus metrics, and chart usage, cost &amp; performance in a ready-made Grafana dashboard.</p>
+      <div class="hero-pipe mono"><b>/metrics</b> <span class="arrow">→</span> <b>prometheus</b> <span class="arrow">→</span> <b>grafana</b></div>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="#quickstart">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          Get started
+        </a>
+        <a class="btn btn-ghost" href="https://github.com/baselhusam/open-webui-exporter">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.2.8-.5v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.6.8.5 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
+          View on GitHub
+        </a>
+      </div>
+      <div class="trust">
+        <span class="label">Works with</span>
+        <div class="tiles">
+          <span class="tile" title="Open WebUI"><img src="assets/openwebui.png" alt="Open WebUI"></span>
+          <span class="tile" title="Prometheus"><img src="assets/prometheus.webp" alt="Prometheus"></span>
+          <span class="tile" title="Grafana"><img src="assets/grafana.webp" alt="Grafana"></span>
+          <span class="tile" title="Docker"><img src="assets/docker.png" alt="Docker"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- live console card -->
+    <div class="console" aria-hidden="true">
+      <div class="console-bar">
+        <span class="dot" style="background:#ff5f57"></span>
+        <span class="dot" style="background:#febc2e"></span>
+        <span class="dot" style="background:#28c840"></span>
+        <span class="mono">GET :9090/metrics · <span style="color:var(--green)">200 OK</span></span>
+      </div>
+      <div class="console-body">
+        <div class="metrics-grid">
+          <div class="metric"><div class="k">openwebui_messages_total</div><div class="v g" data-count="18420">18,420</div><div class="d">+312 / 24h</div></div>
+          <div class="metric"><div class="k">tokens_total</div><div class="v" data-count="9200000">9.2M</div><div class="d">in 5.8M · out 3.4M</div></div>
+          <div class="metric"><div class="k">estimated_cost_usd</div><div class="v o">$284.10</div><div class="d">reconstructed</div></div>
+          <div class="metric"><div class="k">satisfaction_ratio</div><div class="v g">94%</div><div class="d">1.2k feedbacks</div></div>
+        </div>
+      </div>
+      <div class="sparkwrap">
+        <svg viewBox="0 0 480 66" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="sg-o" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F2A900" stop-opacity=".33"/><stop offset="1" stop-color="#F2A900" stop-opacity="0"/></linearGradient>
+            <linearGradient id="sg-g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#73BF69" stop-opacity=".4"/><stop offset="1" stop-color="#73BF69" stop-opacity="0"/></linearGradient>
+          </defs>
+          <path d="M0 40 C60 34 90 14 150 22 S270 52 330 34 420 12 480 24 L480 66 L0 66 Z" fill="url(#sg-o)"/>
+          <path class="spark" d="M0 40 C60 34 90 14 150 22 S270 52 330 34 420 12 480 24" fill="none" stroke="#F2A900" stroke-width="2.4"/>
+          <path d="M0 54 C70 50 100 40 160 46 S280 60 340 50 440 30 480 42 L480 66 L0 66 Z" fill="url(#sg-g)"/>
+          <path class="spark" d="M0 54 C70 50 100 40 160 46 S280 60 340 50 440 30 480 42" fill="none" stroke="#73BF69" stroke-width="2.4"/>
+        </svg>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- STAT STRIP -->
+<section class="block" style="padding-top:0">
+  <div class="wrap">
+    <div class="stat-strip reveal">
+      <div class="stat g"><div class="n">0<span class="u">db creds</span></div><div class="l">just an API key</div></div>
+      <div class="stat"><div class="n">30<span class="u">s poll</span></div><div class="l">configurable interval</div></div>
+      <div class="stat o"><div class="n">40<span class="u">+ metrics</span></div><div class="l">users · cost · quality</div></div>
+      <div class="stat"><div class="n">1<span class="u">command</span></div><div class="l">docker compose up</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- PROBLEM / SOLUTION -->
+<section class="block" style="padding-top:14px">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="kicker">Why it exists</span>
+      <h2 class="sec-title">Open WebUI has no <code style="font-size:0.8em;font-family:var(--mono);color:var(--orange)">/metrics</code>. This fixes that.</h2>
+      <p>The only other community exporter needs direct PostgreSQL access. This one talks to the REST API instead — so it works on any backend, with no database credentials.</p>
+    </div>
+    <div class="split">
+      <div class="card pad-lg reveal">
+        <span class="tag tag-bad mono">the old way</span>
+        <h3>Direct database access</h3>
+        <ul class="bad">
+          <li>Requires PostgreSQL credentials &amp; network reach to the DB</li>
+          <li>Breaks on SQLite deployments</li>
+          <li>Couples your monitoring to Open WebUI's schema</li>
+        </ul>
+      </div>
+      <div class="card pad-lg reveal" style="border-color:var(--border-hi)">
+        <span class="tag tag-good mono">this exporter</span>
+        <h3>Just the REST API</h3>
+        <ul>
+          <li>One admin API key — no database credentials</li>
+          <li>Works with SQLite <em>or</em> Postgres, unchanged</li>
+          <li>Uses built-in <code style="font-family:var(--mono);font-size:0.85em;color:var(--green)">/api/v1/analytics/*</code> pre-aggregated data</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- STAT / METRICS SUMMARY -->
+<section class="block" id="features" style="padding-top:14px">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="kicker">What you get</span>
+      <h2 class="sec-title">Usage, cost &amp; quality — as first-class metrics.</h2>
+      <p>Every poll cycle writes users, chats, messages, tokens, per-model breakdowns, feedback and reconstructed spend into an in-memory Prometheus registry.</p>
+    </div>
+    <div class="features">
+      <div class="feature reveal">
+        <span class="ic"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2" stroke-linecap="round"/></svg></span>
+        <h3>Poll-based, not push</h3>
+        <p>A single daemon thread wakes every 30s, calls each collector once, and serves whatever the last cycle wrote to <code style="font-family:var(--mono);color:var(--orange);font-size:0.85em">/metrics</code>.</p>
+      </div>
+      <div class="feature reveal">
+        <span class="ic"><svg viewBox="0 0 24 24"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <h3>Collector isolation</h3>
+        <p>Each collector runs in its own <code style="font-family:var(--mono);color:var(--green);font-size:0.85em">try/except</code>. One dead endpoint or bad key can't crash the process or block the others.</p>
+      </div>
+      <div class="feature reveal">
+        <span class="ic"><svg viewBox="0 0 24 24"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <h3>Cost reconstruction</h3>
+        <p>Open WebUI never reports price. A per-model rate table multiplies each message's token usage into estimated spend, per model and per user.</p>
+      </div>
+      <div class="feature reveal">
+        <span class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1" stroke-linecap="round"/></svg></span>
+        <h3>Admin-wide totals</h3>
+        <p>Aggregates the admin-scoped <code style="font-family:var(--mono);color:var(--green);font-size:0.85em">/chats/all/db</code> so message, tag and response-time counts are correct across every user — not just the key's own.</p>
+      </div>
+      <div class="feature reveal">
+        <span class="ic"><svg viewBox="0 0 24 24"><path d="M3 3v18h18" stroke-linecap="round"/><path d="M7 14l3-4 3 3 5-7" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <h3>Ready-made dashboard</h3>
+        <p>A generated 24-column Grafana dashboard ships in the box — KPIs, token economics, model catalog, feedback and spend — auto-provisioned on startup.</p>
+      </div>
+      <div class="feature reveal">
+        <span class="ic"><svg viewBox="0 0 24 24"><path d="M21 8v8a2 2 0 0 1-1 1.7l-7 4a2 2 0 0 1-2 0l-7-4A2 2 0 0 1 3 16V8a2 2 0 0 1 1-1.7l7-4a2 2 0 0 1 2 0l7 4A2 2 0 0 1 21 8z" stroke-linejoin="round"/><path d="M3.3 7L12 12l8.7-5M12 22V12" stroke-linecap="round"/></svg></span>
+        <h3>Seedable demo data</h3>
+        <p>Scripts populate a real instance with mock users, groups, KBs, chats &amp; feedback through the REST API — all namespaced so teardown removes exactly it.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- DASHBOARD SCREENSHOTS -->
+<section class="block" id="dashboard" style="padding-top:14px">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="kicker">The dashboard</span>
+      <h2 class="sec-title">Everything charted, out of the box.</h2>
+      <p>Nine sections spanning hero KPIs, per-user leaderboards, token economics, the model catalog &amp; capabilities, quality &amp; feedback, and exporter self-health.</p>
+    </div>
+    <div class="shots">
+      <figure class="shot reveal">
+        <figcaption class="cap"><span class="dot" style="background:var(--green)"></span> Overview, top users &amp; token economics <span class="mono">— KPIs · leaderboards · cost &amp; spend</span></figcaption>
+        <img src="assets/shot1.png" alt="Grafana overview: KPI tiles, top users, token economics, and estimated spend" loading="lazy">
+      </figure>
+      <figure class="shot reveal">
+        <figcaption class="cap"><span class="dot" style="background:var(--orange)"></span> Models &amp; providers, catalog &amp; capabilities <span class="mono">— provider split · size · context · vision/tools</span></figcaption>
+        <img src="assets/shot2.png" alt="Grafana models and providers view: provider split, top models, model catalog, and capabilities" loading="lazy">
+      </figure>
+      <figure class="shot reveal">
+        <figcaption class="cap"><span class="dot" style="background:var(--green)"></span> Quality &amp; feedback, engagement &amp; trends <span class="mono">— satisfaction · topic tags · response times</span></figcaption>
+        <img src="assets/shot3.png" alt="Grafana quality and feedback view: satisfaction per model, engagement, and usage trends" loading="lazy">
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- QUICK START -->
+<section class="block" id="quickstart" style="padding-top:14px">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="kicker">Quick start</span>
+      <h2 class="sec-title">Running in four steps.</h2>
+      <p>Generate an admin API key, drop it in <code style="font-family:var(--mono);color:var(--orange);font-size:0.82em">.env</code>, and bring the stack up. Standalone or Docker Compose — your call.</p>
+    </div>
+    <div class="steps">
+      <div class="step reveal">
+        <div class="step-head"><span class="step-num">01</span><h3>Generate an API key</h3></div>
+        <p>In Open WebUI: <b style="color:var(--text-2)">Settings → Account → API Keys → Create new key</b>. Enable it under Admin Settings if hidden.</p>
+        <pre><code><span class="c-cmt"># use an admin key — several metrics</span>
+<span class="c-cmt"># come from admin-wide endpoints</span></code></pre>
+      </div>
+      <div class="step reveal">
+        <div class="step-head"><span class="step-num">02</span><h3>Configure</h3></div>
+        <p>Copy <code style="font-family:var(--mono);font-size:0.85em">.env.example → .env</code> and fill in your instance URL and key.</p>
+        <pre><code><span class="c-key">OPENWEBUI_BASE_URL</span>=<span class="c-str">http://localhost:3000</span>
+<span class="c-key">OPENWEBUI_API_KEY</span>=<span class="c-str">&lt;your key&gt;</span>
+<span class="c-key">POLL_INTERVAL_SECONDS</span>=<span class="c-str">30</span>
+<span class="c-key">EXPORTER_PORT</span>=<span class="c-str">9090</span></code></pre>
+      </div>
+      <div class="step reveal">
+        <div class="step-head"><span class="step-num">03</span><h3>Run standalone</h3></div>
+        <p>Install deps into the venv and start polling. Verify with a curl.</p>
+        <pre><code><span class="c-fn">pip</span> install -r requirements.txt
+<span class="c-fn">export</span> $(cat .env | xargs)
+<span class="c-fn">python</span> exporter.py
+<span class="c-fn">curl</span> http://localhost:9090/metrics</code></pre>
+      </div>
+      <div class="step reveal">
+        <div class="step-head"><span class="step-num">04</span><h3>…or Docker Compose</h3></div>
+        <p>App first, then the observability stack — it pulls the published exporter image, no local build. Grafana comes up pre-provisioned on <b style="color:var(--text-2)">:3001</b>.</p>
+        <pre><code><span class="c-cmt"># the app</span>
+<span class="c-fn">docker</span> compose up -d
+<span class="c-cmt"># exporter · prometheus · grafana</span>
+<span class="c-fn">docker</span> compose -f docker-compose.monitoring.yml \
+  up -d</code></pre>
+      </div>
+    </div>
+    <div class="steps" style="margin-top:16px">
+      <div class="step reveal" style="grid-column:1/-1">
+        <div class="step-head"><span class="step-num">◎</span><h3>Pull the image directly</h3></div>
+        <p>The exporter is published to both <b style="color:var(--text-2)">GHCR</b> and <b style="color:var(--text-2)">Docker Hub</b> on every release. Compose grabs it for you, but you can pull it yourself — Compose defaults to GHCR; point it at Docker Hub (or pin a tag) with <code style="font-family:var(--mono);font-size:0.85em;color:var(--orange)">EXPORTER_IMAGE</code>.</p>
+        <pre><code><span class="c-cmt"># GitHub Container Registry (default)</span>
+<span class="c-fn">docker</span> pull ghcr.io/baselhusam/open-webui-exporter:latest
+<span class="c-cmt"># …or Docker Hub</span>
+<span class="c-fn">docker</span> pull docker.io/baselhusam/open-webui-exporter:latest
+
+<span class="c-cmt"># make the monitoring stack use Docker Hub, or pin a version</span>
+<span class="c-key">EXPORTER_IMAGE</span>=<span class="c-str">docker.io/baselhusam/open-webui-exporter:latest</span> \
+  <span class="c-fn">docker</span> compose -f docker-compose.monitoring.yml up -d
+<span class="c-key">EXPORTER_IMAGE</span>=<span class="c-str">ghcr.io/baselhusam/open-webui-exporter:v0.1.0</span> \
+  <span class="c-fn">docker</span> compose -f docker-compose.monitoring.yml up -d</code></pre>
+      </div>
+    </div>
+    <div class="callout reveal" style="margin-top:22px">
+      <svg viewBox="0 0 24 24"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <p><strong>Cost is estimated, not reported.</strong> Open WebUI exposes token counts but never prices, so <code>pricing.py</code> holds a per-model rate table. The local-Ollama entries are <strong>mock prices</strong> — replace them (or set <code>MODEL_PRICES_FILE</code>) before treating the numbers as real.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ARCHITECTURE -->
+<section class="block" style="padding-top:14px">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="kicker">Under the hood</span>
+      <h2 class="sec-title">Design decisions worth knowing.</h2>
+    </div>
+    <div class="arch">
+      <div class="card reveal"><h3><span class="n">A</span> Two decoupled compose stacks</h3><p>The app (<code style="font-family:var(--mono);font-size:0.85em;color:var(--green)">docker-compose.yml</code>) and the monitoring stack (<code style="font-family:var(--mono);font-size:0.85em;color:var(--green)">docker-compose.monitoring.yml</code>) run as separate projects that never share networks or volumes. The exporter reaches Open WebUI over <code style="font-family:var(--mono);font-size:0.85em;color:var(--orange)">host.docker.internal</code>.</p></div>
+      <div class="card reveal"><h3><span class="n">B</span> One shared HTTP wrapper</h3><p>Every collector routes through <code style="font-family:var(--mono);font-size:0.85em;color:var(--green)">get_json</code> — a Bearer-auth session with a 5s timeout that raises on any failure, letting <code style="font-family:var(--mono);font-size:0.85em;color:var(--orange)">poll_once</code> record the error and flip the health gauge.</p></div>
+      <div class="card reveal"><h3><span class="n">C</span> Scope-aware collection</h3><p>Analytics &amp; feedback endpoints are admin-wide; chat stats are scoped to the caller. To get true cross-user totals, the exporter aggregates the admin-wide chat dump client-side rather than trusting the scoped endpoint.</p></div>
+      <div class="card reveal"><h3><span class="n">D</span> Generated dashboard</h3><p>The Grafana JSON isn't hand-edited — <code style="font-family:var(--mono);font-size:0.85em;color:var(--green)">build_dashboard.py</code> lays out the 24-column grid and validates there are no overlaps, so the layout stays coherent as panels change.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA BAND -->
+<section class="cta-band">
+  <div class="wrap reveal">
+    <h2>Point it at Open WebUI.<br>Watch the metrics flow.</h2>
+    <p>MIT-licensed, dependency-light, and running with one command. No database credentials required.</p>
+    <div class="hero-cta">
+      <a class="btn btn-primary" href="https://github.com/baselhusam/open-webui-exporter">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.2.8-.5v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.6.8.5 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
+        Star on GitHub
+      </a>
+      <a class="btn btn-ghost" href="https://github.com/baselhusam/open-webui-exporter#readme">Read the docs</a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- FOOTER -->
+<footer>
+  <div class="wrap foot-inner">
+    <a class="brand" href="#top">
+      <span class="logomark">
+        <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+          <path d="M8 58 C24 54 32 40 48 46 S72 62 92 50" fill="none" stroke="#F2A900" stroke-width="8" stroke-linecap="round"/>
+          <path d="M8 76 C24 72 32 60 48 66 S72 78 92 68" fill="none" stroke="#73BF69" stroke-width="8" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <span>Open WebUI Exporter<br><small>MIT © Basel Husam</small></span>
+    </a>
+    <div class="foot-links">
+      <a href="https://github.com/baselhusam/open-webui-exporter">GitHub</a>
+      <a href="https://github.com/baselhusam/open-webui-exporter#readme">README</a>
+      <a href="https://github.com/baselhusam/open-webui-exporter/blob/main/LICENSE">License</a>
+    </div>
+    <span class="foot-note">/metrics → prometheus → grafana</span>
+  </div>
+</footer>
+
+<script>
+(function () {
+  // ---- theme ----
+  var root = document.documentElement;
+  var saved = null;
+  try { saved = localStorage.getItem('owe-theme'); } catch (e) {}
+  if (saved) root.setAttribute('data-theme', saved);
+  else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+    root.setAttribute('data-theme', 'light');
+  }
+  var btn = document.getElementById('themeBtn');
+  btn.addEventListener('click', function () {
+    var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem('owe-theme', next); } catch (e) {}
+  });
+
+  // ---- scroll reveal ----
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+    });
+  }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+  document.querySelectorAll('.reveal').forEach(function (el, i) {
+    el.style.transitionDelay = (i % 3) * 70 + 'ms';
+    io.observe(el);
+  });
+})();
+</script>
+</body>
+</html>
