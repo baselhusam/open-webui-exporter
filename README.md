@@ -43,7 +43,38 @@ export $(cat .env | xargs)
 curl http://localhost:9090/metrics
 ```
 
-## 4. Run with Docker Compose
+## 4. Run with Docker (pre-built image)
+
+Published images are built by CI for `linux/amd64` and `linux/arm64` and pushed to
+both registries — no need to build from the `Dockerfile` yourself. Pick either:
+
+| Registry | Image |
+|----------|-------|
+| GitHub Container Registry | `ghcr.io/baselhusam/open-webui-exporter:latest` |
+| Docker Hub | `docker.io/baselhusam/open-webui-exporter:latest` |
+
+Tags: `latest`, semver (`0.1.0`, `0.1`), and per-commit `sha-<short>` for immutable pinning.
+
+### Single container
+
+```bash
+docker run -d \
+  --name openwebui-exporter \
+  -p 9090:9090 \
+  --add-host host.docker.internal:host-gateway \
+  -e OPENWEBUI_BASE_URL=http://host.docker.internal:3000 \
+  -e OPENWEBUI_API_KEY=<your key> \
+  ghcr.io/baselhusam/open-webui-exporter:latest
+
+curl http://localhost:9090/metrics
+```
+
+`--add-host host.docker.internal:host-gateway` lets the container reach an Open WebUI
+running on the host; if Open WebUI runs elsewhere, point `OPENWEBUI_BASE_URL` at it
+directly and drop the `--add-host` flag. Swap the image reference for the Docker Hub
+one above to pull from Docker Hub instead.
+
+## 5. Run the full stack with Docker Compose
 
 The stack is split into two independent compose files so you always know what's
 running:
@@ -53,12 +84,23 @@ running:
 | `docker-compose.yml` | `open_webui_exporter` | Open WebUI (the app) | Open WebUI `3000` |
 | `docker-compose.monitoring.yml` | `openwebui-monitoring` | exporter · Prometheus · Grafana | exporter `9090`, Prometheus `9091`, Grafana `3001` |
 
+The monitoring stack **pulls the published exporter image** (GHCR by default) rather
+than building it locally.
+
 ```bash
 # The app on its own:
-docker compose up -d                                          # http://localhost:3000
+docker compose up -d                                    # http://localhost:3000
 
 # Add the observability stack alongside it (reads OPENWEBUI_API_KEY from .env):
-docker compose -f docker-compose.monitoring.yml up -d --build # Grafana http://localhost:3001
+docker compose -f docker-compose.monitoring.yml up -d   # Grafana http://localhost:3001
+```
+
+To pull from Docker Hub instead, or to pin a specific version, set `EXPORTER_IMAGE`
+(in `.env` or the shell) before bringing the stack up:
+
+```bash
+EXPORTER_IMAGE=docker.io/baselhusam/open-webui-exporter:latest \
+  docker compose -f docker-compose.monitoring.yml up -d
 ```
 
 The two stacks are fully separate (different compose projects) — they never share
@@ -72,7 +114,7 @@ docker compose -f docker-compose.monitoring.yml down   # stop monitoring only
 docker compose down                                    # stop the app only
 ```
 
-## 5. Prometheus & Grafana are pre-configured
+## 6. Prometheus & Grafana are pre-configured
 
 Bringing up `docker-compose.monitoring.yml` wires everything automatically:
 

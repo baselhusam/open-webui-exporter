@@ -3,7 +3,10 @@
 # This is a SEPARATE stack from the app. Start the app first (docker-compose.yml),
 # then bring this up alongside it:
 #
-#   docker compose -f docker-compose.monitoring.yml up -d --build
+#   docker compose -f docker-compose.monitoring.yml up -d
+#
+# The exporter runs the pre-built image published by CI (GHCR by default) — no
+# local build. Pin a different tag or switch to Docker Hub via EXPORTER_IMAGE.
 #
 # What you get:
 #   - exporter    -> scrapes the Open WebUI REST API, exposes /metrics    (localhost:9090)
@@ -24,8 +27,11 @@ name: openwebui-monitoring
 
 services:
   exporter:
-    build: .
-    image: openwebui-exporter:local
+    # Pre-built image published by CI. Defaults to GHCR; override to use Docker
+    # Hub or pin a version/sha tag, e.g.:
+    #   EXPORTER_IMAGE=docker.io/baselhusam/open-webui-exporter:latest
+    #   EXPORTER_IMAGE=ghcr.io/baselhusam/open-webui-exporter:v0.1.0
+    image: ${EXPORTER_IMAGE:-ghcr.io/baselhusam/open-webui-exporter:latest}
     container_name: openwebui-exporter
     restart: unless-stopped
     ports:

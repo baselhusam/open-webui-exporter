@@ -25,8 +25,10 @@ curl http://localhost:9090/metrics
 .venv/bin/python -m py_compile exporter.py metrics.py collectors/*.py scripts/*.py
 
 # Run the whole thing with Docker Compose (app first, then monitoring)
-docker compose up -d                                          # Open WebUI on :3000
-docker compose -f docker-compose.monitoring.yml up -d --build # exporter/prometheus/grafana
+# The monitoring stack pulls the CI-published exporter image (GHCR by default;
+# override with EXPORTER_IMAGE) — it does not build from the Dockerfile.
+docker compose up -d                                    # Open WebUI on :3000
+docker compose -f docker-compose.monitoring.yml up -d   # exporter/prometheus/grafana
 
 # Regenerate the Grafana dashboard JSON after editing the layout builder
 .venv/bin/python grafana/build_dashboard.py
