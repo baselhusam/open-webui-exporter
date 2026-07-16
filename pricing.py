@@ -53,7 +53,6 @@ def _add(provider, model, inp, out, cache_read=0.0, cache_write=0.0):
 # these stand in for an internal chargeback rate so cost panels have data.
 _add("ollama", "llama3.2:1b", 0.05, 0.10)
 _add("ollama", "qwen3.5:2b", 0.08, 0.16)
-_add("ollama", "agent-model", 0.20, 0.60)
 
 # --- OpenAI (https://openai.com/api/pricing/). Cached input ~= 10% of input.
 # GPT-5.6 (Sol/Terra/Luna) went GA 2026-07-09; GPT-5.5 is the prior flagship.
