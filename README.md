@@ -214,6 +214,10 @@ removes exactly that and leaves real data untouched.
 - Feedback counts (`collectors/feedback.py`) are aggregated from `/api/v1/evaluations/feedbacks/all/export` (admin-only), tallying each `rating` record's `+1`/`-1` per model (and a per-model satisfaction ratio). The Arena `/api/v1/evaluations/leaderboard` stays empty until users run side-by-side battles (separate from thumbs up/down), so that panel shows "No arena battles yet" until then.
 - The exporter tolerates individual endpoint failures: a bad API key or one down endpoint increments `openwebui_exporter_scrape_errors_total{endpoint=...}` and sets `openwebui_exporter_scrape_success` to 0, rather than crashing the process.
 
+## Author
+
+Built by [Basel Husam](https://baselhusam.com).
+
 ## License
 
-[MIT](LICENSE) © Basel Husam
+[MIT](LICENSE) © [Basel Husam](https://baselhusam.com)
