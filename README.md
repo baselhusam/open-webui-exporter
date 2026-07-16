@@ -4,7 +4,16 @@
   <img src="assets/Prometheus%20Exporter%20Banner.svg" alt="Open WebUI → Prometheus → Grafana" width="100%">
 </p>
 
+<p align="center">
+  <a href="https://baselhusam.github.io/open-webui-exporter/"><img src="https://img.shields.io/badge/docs-open--webui--exporter-4C8DFF?style=flat-square" alt="Documentation"></a>
+  <a href="https://github.com/baselhusam/open-webui-exporter/pkgs/container/open-webui-exporter"><img src="https://img.shields.io/badge/GHCR-open--webui--exporter-8E7CF0?style=flat-square&logo=github&logoColor=white" alt="GitHub Container Registry"></a>
+  <a href="https://hub.docker.com/r/baselhusam/open-webui-exporter"><img src="https://img.shields.io/badge/Docker%20Hub-open--webui--exporter-2496ED?style=flat-square&logo=docker&logoColor=white" alt="Docker Hub"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-3FB68B?style=flat-square" alt="MIT License"></a>
+</p>
+
 Polls Open WebUI's REST API and exposes Prometheus metrics on `/metrics` (default port `9090`). Ships with a ready-made Grafana dashboard.
+
+**[📖 Documentation & screenshots →](https://baselhusam.github.io/open-webui-exporter/)**
 
 ![Overview — KPIs, top users, token economics, and estimated spend](screenshots/1.png)
 
@@ -87,8 +96,8 @@ both registries — no need to build from the `Dockerfile` yourself. Pick either
 
 | Registry | Image |
 |----------|-------|
-| GitHub Container Registry | `ghcr.io/baselhusam/open-webui-exporter:latest` |
-| Docker Hub | `docker.io/baselhusam/open-webui-exporter:latest` |
+| [GitHub Container Registry](https://github.com/baselhusam/open-webui-exporter/pkgs/container/open-webui-exporter) | `ghcr.io/baselhusam/open-webui-exporter:latest` |
+| [Docker Hub](https://hub.docker.com/r/baselhusam/open-webui-exporter) | `docker.io/baselhusam/open-webui-exporter:latest` |
 
 Tags: `latest`, semver (`0.1.0`, `0.1`), and per-commit `sha-<short>` for immutable pinning.
 
