@@ -65,7 +65,7 @@ MODEL_PRICES_CSV_HOST=./model_prices.csv
 MODEL_PRICES_CSV=/etc/openwebui-exporter/model_prices.csv
 ```
 
-(The compose file mounts `MODEL_PRICES_CSV_HOST` read-only into the exporter; it defaults to the shipped example so `up` never fails on a missing file, and the sheet is only *read* when `MODEL_PRICES_CSV` points at it.)
+(The exporter compose file mounts `MODEL_PRICES_CSV_HOST` read-only into the container; it defaults to the shipped example so `up` never fails on a missing file, and the sheet is only *read* when `MODEL_PRICES_CSV` points at it.)
 
 **JSON file** (alternative): `MODEL_PRICES_FILE` pointing at `{"gpt-4o": [2.50, 10.00], "llama3.2:1b": [0, 0]}` — two values, or four to include `[input, output, cache_read, cache_write]`.
 
@@ -111,44 +111,59 @@ running on the host; if Open WebUI runs elsewhere, point `OPENWEBUI_BASE_URL` at
 directly and drop the `--add-host` flag. Swap the image reference for the Docker Hub
 one above to pull from Docker Hub instead.
 
-## 5. Run the full stack with Docker Compose
+## 5. Run with Docker Compose
 
-The stack is split into two independent compose files so you always know what's
-running:
+Three compose files, each runnable on its own, so you always know what's running:
 
 | File | Project | Services | Ports (host) |
 |------|---------|----------|--------------|
-| `docker-compose.yml` | `open_webui_exporter` | Open WebUI (the app) | Open WebUI `3000` |
+| `docker-compose.yml` | `openwebui-exporter` | the exporter alone | exporter `9090` |
 | `docker-compose.monitoring.yml` | `openwebui-monitoring` | exporter · Prometheus · Grafana | exporter `9090`, Prometheus `9091`, Grafana `3001` |
+| `docker-compose.openwebui.yml` | `openwebui-app` | Open WebUI (only if you need one) | Open WebUI `3000` |
 
-The monitoring stack **pulls the published exporter image** (GHCR by default) rather
-than building it locally.
+All of them **pull the published exporter image** (GHCR by default) rather than
+building it locally. The monitoring file `extends` the exporter service out of
+`docker-compose.yml`, so the exporter is configured in exactly one place.
+
+**Already have Open WebUI and your own Prometheus?** Just the exporter:
 
 ```bash
-# The app on its own:
-docker compose up -d                                    # http://localhost:3000
+docker compose up -d                                    # http://localhost:9090/metrics
+```
 
-# Add the observability stack alongside it (reads OPENWEBUI_API_KEY from .env):
+**Want the batteries-included stack** (exporter + Prometheus + pre-built dashboard):
+
+```bash
 docker compose -f docker-compose.monitoring.yml up -d   # Grafana http://localhost:3001
 ```
 
+Run one or the other, not both — they share the exporter's container name and port
+9090.
+
+**No Open WebUI yet?** Bring one up first, then either exporter stack:
+
+```bash
+docker compose -f docker-compose.openwebui.yml up -d    # http://localhost:3000
+```
+
 To pull from Docker Hub instead, or to pin a specific version, set `EXPORTER_IMAGE`
-(in `.env` or the shell) before bringing the stack up:
+(in `.env` or the shell) before bringing a stack up:
 
 ```bash
 EXPORTER_IMAGE=docker.io/baselhusam/open-webui-exporter:latest \
   docker compose -f docker-compose.monitoring.yml up -d
 ```
 
-The two stacks are fully separate (different compose projects) — they never share
-networks or volumes and never orphan each other. The monitoring exporter reaches
-Open WebUI over the host (`host.docker.internal:3000`), so start the app first.
+The stacks are fully separate (different compose projects) — they never share
+networks or volumes and never orphan each other. The exporter reaches Open WebUI
+over the host (`host.docker.internal:3000`), so start Open WebUI first; if yours
+runs somewhere else, point `OPENWEBUI_BASE_URL` in `docker-compose.yml` at it.
 
-Tear either down independently (data is kept in named volumes):
+Tear any of them down independently (data is kept in named volumes):
 
 ```bash
 docker compose -f docker-compose.monitoring.yml down   # stop monitoring only
-docker compose down                                    # stop the app only
+docker compose -f docker-compose.openwebui.yml down    # stop Open WebUI only
 ```
 
 ## 6. Prometheus & Grafana are pre-configured

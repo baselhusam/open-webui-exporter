@@ -1,35 +1,53 @@
-# Open WebUI only — the application by itself.
+# The exporter on its own — the default stack for this repo.
 #
-#   docker compose up -d          # start Open WebUI on http://localhost:3000
-#   docker compose down           # stop it (data is kept in the named volume)
+#   docker compose up -d                 # exporter on http://localhost:9090/metrics
+#   docker compose down                  # stop it
 #
-# For the observability stack (exporter + Prometheus + Grafana) run the second
-# file *in addition* to this one:
-#   docker compose -f docker-compose.monitoring.yml up -d
+# Use this when you already have Open WebUI running and just want to point your
+# own Prometheus at a /metrics endpoint. It runs the pre-built image published by
+# CI (GHCR by default) — no local build.
 #
-# Ollama is NOT run in Docker here. On macOS, Docker Desktop cannot access the
-# Metal GPU, so a containerized Ollama falls back to slow CPU-only inference.
-# Run Ollama natively on the Mac (the app or `brew install ollama`) so it uses
-# Metal acceleration, and point open-webui at it via host.docker.internal.
+# The other two files in this repo:
+#   docker-compose.monitoring.yml  exporter + Prometheus + Grafana (full stack)
+#   docker-compose.openwebui.yml   Open WebUI itself, if you need one to point at
+#
+# Don't run this file *and* the monitoring stack at once — the monitoring stack
+# reuses this exporter definition, and both would fight over the same container
+# name and host port 9090.
+
+# Own project name, independent of the directory name.
+name: openwebui-exporter
 
 services:
-  open-webui:
-    image: ghcr.io/open-webui/open-webui:main
-    container_name: open-webui
+  exporter:
+    # Pre-built image published by CI. Defaults to GHCR; override to use Docker
+    # Hub or pin a version/sha tag, e.g.:
+    #   EXPORTER_IMAGE=docker.io/baselhusam/open-webui-exporter:latest
+    #   EXPORTER_IMAGE=ghcr.io/baselhusam/open-webui-exporter:v0.1.0
+    image: ${EXPORTER_IMAGE:-ghcr.io/baselhusam/open-webui-exporter:latest}
+    container_name: openwebui-exporter
     restart: unless-stopped
     ports:
-      - "3000:8080"
+      - "9090:9090"
     environment:
-      - OLLAMA_BASE_URL=http://host.docker.internal:11434
-      # Replace this with a random string for production use
-      - WEBUI_SECRET_KEY=dev_secret_key
-      # WebSocket delivery was stalling (response generated but UI needed a
-      # refresh to show it) - fall back to HTTP polling instead
-      - ENABLE_WEBSOCKET_SUPPORT=False
+      # Fixed to the host gateway: this reaches an Open WebUI published on the
+      # host (e.g. by docker-compose.openwebui.yml). Don't use localhost here —
+      # that would be the exporter container itself. If your Open WebUI lives
+      # somewhere else, change this line to its URL. Only the API key is read
+      # from .env.
+      OPENWEBUI_BASE_URL: http://host.docker.internal:3000
+      OPENWEBUI_API_KEY: ${OPENWEBUI_API_KEY:?set OPENWEBUI_API_KEY in .env}
+      POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-30}
+      EXPORTER_PORT: "9090"
+      # Point at the mounted CSV to override the built-in price table. Empty by
+      # default, so the image's built-in prices are used until you opt in.
+      MODEL_PRICES_CSV: ${MODEL_PRICES_CSV:-}
+    volumes:
+      # Your host price sheet, read-only. Defaults to the shipped example so
+      # `up` never fails on a missing file; it's only *read* when MODEL_PRICES_CSV
+      # above points at it. To use custom prices, in .env set
+      #   MODEL_PRICES_CSV_HOST=./model_prices.csv
+      #   MODEL_PRICES_CSV=/etc/openwebui-exporter/model_prices.csv
+      - ${MODEL_PRICES_CSV_HOST:-./model_prices.example.csv}:/etc/openwebui-exporter/model_prices.csv:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    volumes:
-      - open-webui_data:/app/backend/data
-
-volumes:
-  open-webui_data:

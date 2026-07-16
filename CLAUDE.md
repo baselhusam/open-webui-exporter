@@ -6,7 +6,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A Prometheus exporter for Open WebUI. Open WebUI has no first-party `/metrics` endpoint, and the existing community exporter (`ncecere/exporter-openwebui`) requires direct PostgreSQL access. This exporter instead polls Open WebUI's REST API — including its built-in `/api/v1/analytics/*` endpoints, which return pre-aggregated per-model and per-user usage data — so it works against any backend (SQLite or Postgres) with no database credentials, only an Open WebUI API key.
 
-**Two separate compose stacks.** `docker-compose.yml` runs only Open WebUI itself (project `open_webui_exporter`; pointed at a natively-running Ollama on the host via `host.docker.internal`, not a containerized Ollama — see the comment block at the top of that file for why). `docker-compose.monitoring.yml` runs the observability stack — exporter + Prometheus + Grafana (project `openwebui-monitoring`, set via a top-level `name:` so it never shares networks/volumes with or orphans the app). The exporter reaches Open WebUI over `host.docker.internal:3000`, so the two stacks stay decoupled; start the app first, then the monitoring stack. Host ports: Open WebUI `3000`, exporter `9090`, Prometheus `9091`, Grafana `3001`. The Open WebUI data lives in the named volume `open_webui_exporter_open-webui_data` — never `docker compose down -v` the app stack.
+**Three separate compose stacks**, each with its own top-level `name:` so they never share networks/volumes or orphan each other, and each runnable with a single `-f`:
+
+| File | Project | Services |
+|------|---------|----------|
+| `docker-compose.yml` | `openwebui-exporter` | the exporter alone — the repo's default `docker compose up` |
+| `docker-compose.monitoring.yml` | `openwebui-monitoring` | exporter + Prometheus + Grafana |
+| `docker-compose.openwebui.yml` | `openwebui-app` | Open WebUI itself, for people who don't already run one |
+
+The monitoring file pulls the exporter service in via `extends: {file: docker-compose.yml, service: exporter}` — **the exporter is configured in exactly one place**; edit `docker-compose.yml` and the monitoring stack inherits it. The two exporter stacks are alternatives, not layers: both use container name `openwebui-exporter` and host port 9090, so running them together collides.
+
+Open WebUI is pointed at a natively-running Ollama on the host via `host.docker.internal` rather than a containerized Ollama — see the comment block atop `docker-compose.openwebui.yml` for why. The exporter likewise reaches Open WebUI over `host.docker.internal:3000`, keeping the stacks decoupled; start Open WebUI first. Host ports: Open WebUI `3000`, exporter `9090`, Prometheus `9091`, Grafana `3001`.
+
+The Open WebUI data volume is **explicitly pinned** to `name: open_webui_exporter_open-webui_data` (the directory-derived name from when Open WebUI lived in `docker-compose.yml`) so the project rename didn't strand existing chats/users. Don't change that name, and never `docker compose -f docker-compose.openwebui.yml down -v`.
 
 ## Commands
 
@@ -24,11 +36,12 @@ curl http://localhost:9090/metrics
 # Compile-check all Python files (no test suite exists yet)
 .venv/bin/python -m py_compile exporter.py metrics.py collectors/*.py scripts/*.py
 
-# Run the whole thing with Docker Compose (app first, then monitoring)
-# The monitoring stack pulls the CI-published exporter image (GHCR by default;
-# override with EXPORTER_IMAGE) — it does not build from the Dockerfile.
-docker compose up -d                                    # Open WebUI on :3000
-docker compose -f docker-compose.monitoring.yml up -d   # exporter/prometheus/grafana
+# Run with Docker Compose (Open WebUI first, then an exporter stack).
+# All stacks pull the CI-published exporter image (GHCR by default; override with
+# EXPORTER_IMAGE) — they do not build from the Dockerfile.
+docker compose -f docker-compose.openwebui.yml up -d    # Open WebUI on :3000
+docker compose up -d                                    # exporter alone on :9090
+docker compose -f docker-compose.monitoring.yml up -d   # OR exporter+prometheus+grafana
 
 # Regenerate the Grafana dashboard JSON after editing the layout builder
 .venv/bin/python grafana/build_dashboard.py

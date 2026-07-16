@@ -1,0 +1,48 @@
+# Open WebUI itself — only needed if you don't already have one to monitor.
+#
+#   docker compose -f docker-compose.openwebui.yml up -d    # http://localhost:3000
+#   docker compose -f docker-compose.openwebui.yml down     # data kept in the volume
+#
+# Start this before the exporter (docker-compose.yml or
+# docker-compose.monitoring.yml), which reaches it over host.docker.internal:3000.
+#
+# Ollama is NOT run in Docker here. On macOS, Docker Desktop cannot access the
+# Metal GPU, so a containerized Ollama falls back to slow CPU-only inference.
+# Run Ollama natively on the Mac (the app or `brew install ollama`) so it uses
+# Metal acceleration, and point open-webui at it via host.docker.internal.
+
+# Own project name so this stack never shares networks/volumes with the exporter
+# stacks and never orphans them.
+name: openwebui-app
+
+services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    restart: unless-stopped
+    ports:
+      - "3000:8080"
+    environment:
+      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      # Replace this with a random string for production use
+      - WEBUI_SECRET_KEY=dev_secret_key
+      # WebSocket delivery was stalling (response generated but UI needed a
+      # refresh to show it) - fall back to HTTP polling instead
+      - ENABLE_WEBSOCKET_SUPPORT=False
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - open-webui_data:/app/backend/data
+
+volumes:
+  open-webui_data:
+    # Pinned to the name this volume already had back when Open WebUI lived in
+    # docker-compose.yml under the directory-derived project name. Compose would
+    # otherwise prefix it with this file's project name and hand Open WebUI a
+    # new empty volume, making existing users/chats look like they vanished.
+    #
+    # If the volume predates that move, Compose warns on every `up` that it "was
+    # created for project open_webui_exporter (expected openwebui-app)". Expected
+    # and harmless — the volume is still used, and the data is intact. Fresh
+    # installs never see it.
+    name: open_webui_exporter_open-webui_data

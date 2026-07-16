@@ -1,12 +1,11 @@
-# Observability stack for Open WebUI: exporter + Prometheus + Grafana.
-#
-# This is a SEPARATE stack from the app. Start the app first (docker-compose.yml),
-# then bring this up alongside it:
+# Full observability stack: exporter + Prometheus + Grafana.
 #
 #   docker compose -f docker-compose.monitoring.yml up -d
 #
-# The exporter runs the pre-built image published by CI (GHCR by default) — no
-# local build. Pin a different tag or switch to Docker Hub via EXPORTER_IMAGE.
+# This is a superset of docker-compose.yml — the exporter service is pulled in
+# from that file via `extends`, so its image/env/volumes are defined once. Run
+# this file *or* the plain docker-compose.yml, never both (same container name
+# and host port).
 #
 # What you get:
 #   - exporter    -> scrapes the Open WebUI REST API, exposes /metrics    (localhost:9090)
@@ -14,48 +13,27 @@
 #   - grafana     -> pre-provisioned datasource + dashboard               (localhost:3001)
 #
 # The exporter reaches Open WebUI over the host (host.docker.internal:3000), so
-# this stack stays fully independent of the app's compose network. It reads
-# OPENWEBUI_API_KEY (and optionally OPENWEBUI_BASE_URL) from the .env file next
+# this stack stays fully independent of the app's compose network. If you don't
+# already have an Open WebUI, start one first:
+#   docker compose -f docker-compose.openwebui.yml up -d
+#
+# Reads OPENWEBUI_API_KEY (and the optional pricing vars) from the .env file next
 # to this compose file — copy .env.example to .env and fill in your API key.
 #
 # Tear it down (Grafana/Prometheus data is kept in named volumes):
 #   docker compose -f docker-compose.monitoring.yml down
 
-# Own project name so this stack is fully independent of the app compose —
+# Own project name so this stack is fully independent of the Open WebUI compose —
 # they never share networks/volumes and never orphan each other.
 name: openwebui-monitoring
 
 services:
   exporter:
-    # Pre-built image published by CI. Defaults to GHCR; override to use Docker
-    # Hub or pin a version/sha tag, e.g.:
-    #   EXPORTER_IMAGE=docker.io/baselhusam/open-webui-exporter:latest
-    #   EXPORTER_IMAGE=ghcr.io/baselhusam/open-webui-exporter:v0.1.0
-    image: ${EXPORTER_IMAGE:-ghcr.io/baselhusam/open-webui-exporter:latest}
-    container_name: openwebui-exporter
-    restart: unless-stopped
-    ports:
-      - "9090:9090"
-    environment:
-      # Fixed to the host gateway: this reaches the Open WebUI published on the
-      # host by docker-compose.yml. (Don't use localhost here — that would be the
-      # exporter container itself. Only the API key is read from .env.)
-      OPENWEBUI_BASE_URL: http://host.docker.internal:3000
-      OPENWEBUI_API_KEY: ${OPENWEBUI_API_KEY:?set OPENWEBUI_API_KEY in .env}
-      POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-30}
-      EXPORTER_PORT: "9090"
-      # Point at the mounted CSV to override the built-in price table. Empty by
-      # default, so the image's built-in prices are used until you opt in.
-      MODEL_PRICES_CSV: ${MODEL_PRICES_CSV:-}
-    volumes:
-      # Your host price sheet, read-only. Defaults to the shipped example so
-      # `up` never fails on a missing file; it's only *read* when MODEL_PRICES_CSV
-      # above points at it. To use custom prices, in .env set
-      #   MODEL_PRICES_CSV_HOST=./model_prices.csv
-      #   MODEL_PRICES_CSV=/etc/openwebui-exporter/model_prices.csv
-      - ${MODEL_PRICES_CSV_HOST:-./model_prices.example.csv}:/etc/openwebui-exporter/model_prices.csv:ro
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    # Single source of truth: docker-compose.yml. Override EXPORTER_IMAGE et al
+    # there or in .env, not here.
+    extends:
+      file: docker-compose.yml
+      service: exporter
 
   prometheus:
     image: prom/prometheus:latest

@@ -562,10 +562,13 @@ footer { border-top: 1px solid var(--border); padding: 40px 0; }
       </div>
       <div class="step reveal">
         <div class="step-head"><span class="step-num">04</span><h3>…or Docker Compose</h3></div>
-        <p>App first, then the observability stack — it pulls the published exporter image, no local build. Grafana comes up pre-provisioned on <b style="color:var(--text-2)">:3001</b>.</p>
-        <pre><code><span class="c-cmt"># the app</span>
+        <p>Every stack pulls the published exporter image, no local build. <code style="font-family:var(--mono);font-size:0.85em;color:var(--green)">docker compose up</code> gives you the exporter alone; the monitoring file adds Prometheus and a pre-provisioned Grafana on <b style="color:var(--text-2)">:3001</b>.</p>
+        <pre><code><span class="c-cmt"># Open WebUI, if you need one</span>
+<span class="c-fn">docker</span> compose -f docker-compose.openwebui.yml \
+  up -d
+<span class="c-cmt"># just the exporter</span>
 <span class="c-fn">docker</span> compose up -d
-<span class="c-cmt"># exporter · prometheus · grafana</span>
+<span class="c-cmt"># …or exporter · prometheus · grafana</span>
 <span class="c-fn">docker</span> compose -f docker-compose.monitoring.yml \
   up -d</code></pre>
       </div>
@@ -601,7 +604,7 @@ footer { border-top: 1px solid var(--border); padding: 40px 0; }
       <h2 class="sec-title">Design decisions worth knowing.</h2>
     </div>
     <div class="arch">
-      <div class="card reveal"><h3><span class="n">A</span> Two decoupled compose stacks</h3><p>The app (<code style="font-family:var(--mono);font-size:0.85em;color:var(--green)">docker-compose.yml</code>) and the monitoring stack (<code style="font-family:var(--mono);font-size:0.85em;color:var(--green)">docker-compose.monitoring.yml</code>) run as separate projects that never share networks or volumes. The exporter reaches Open WebUI over <code style="font-family:var(--mono);font-size:0.85em;color:var(--orange)">host.docker.internal</code>.</p></div>
+      <div class="card reveal"><h3><span class="n">A</span> Decoupled compose stacks</h3><p>The exporter (<code style="font-family:var(--mono);font-size:0.85em;color:var(--green)">docker-compose.yml</code>), the full monitoring stack (<code style="font-family:var(--mono);font-size:0.85em;color:var(--green)">docker-compose.monitoring.yml</code>) and Open WebUI itself (<code style="font-family:var(--mono);font-size:0.85em;color:var(--green)">docker-compose.openwebui.yml</code>) are separate projects that never share networks or volumes. The exporter reaches Open WebUI over <code style="font-family:var(--mono);font-size:0.85em;color:var(--orange)">host.docker.internal</code>.</p></div>
       <div class="card reveal"><h3><span class="n">B</span> One shared HTTP wrapper</h3><p>Every collector routes through <code style="font-family:var(--mono);font-size:0.85em;color:var(--green)">get_json</code> — a Bearer-auth session with a 5s timeout that raises on any failure, letting <code style="font-family:var(--mono);font-size:0.85em;color:var(--orange)">poll_once</code> record the error and flip the health gauge.</p></div>
       <div class="card reveal"><h3><span class="n">C</span> Scope-aware collection</h3><p>Analytics &amp; feedback endpoints are admin-wide; chat stats are scoped to the caller. To get true cross-user totals, the exporter aggregates the admin-wide chat dump client-side rather than trusting the scoped endpoint.</p></div>
       <div class="card reveal"><h3><span class="n">D</span> Generated dashboard</h3><p>The Grafana JSON isn't hand-edited — <code style="font-family:var(--mono);font-size:0.85em;color:var(--green)">build_dashboard.py</code> lays out the 24-column grid and validates there are no overlaps, so the layout stays coherent as panels change.</p></div>
