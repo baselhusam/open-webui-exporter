@@ -3,10 +3,6 @@ name: Build and publish Docker image
 # Publishes the exporter image to GitHub Container Registry (GHCR) and, when
 # Docker Hub credentials are configured as repo secrets, to Docker Hub as well.
 #
-#   - GHCR      -> ghcr.io/<owner>/<repo>            (auth via built-in GITHUB_TOKEN)
-#   - Docker Hub -> docker.io/<DOCKERHUB_USERNAME>/openwebui-exporter
-#                                                     (auth via DOCKERHUB_USERNAME + DOCKERHUB_TOKEN secrets)
-#
 # The Docker Hub push is skipped automatically if the DOCKERHUB_USERNAME secret
 # is not set, so the workflow still succeeds on GHCR alone.
 
