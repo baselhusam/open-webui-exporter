@@ -7,9 +7,14 @@ upgrades the widget choices, layout rhythm, colour palette and gradients:
   - a radial gauge for response latency
   - gradient-filled, smoothed timeseries
 
-Emits grafana/dashboard.json (keeps the ${DS_PROMETHEUS} template var).
+Emits two files from the same panel list:
+  - grafana/dashboard.json — keeps the ${DS_PROMETHEUS} template var pinned to
+    the locally provisioned datasource uid; this is what provisioning loads.
+  - grafana/dashboard.grafana-com.json — the copy to upload to the grafana.com
+    community catalog, with __inputs/__requires instead of the pinned var.
 """
 import json
+import os
 
 DS = {"type": "prometheus", "uid": "${DS_PROMETHEUS}"}
 
@@ -465,7 +470,46 @@ for p in panels:
                 raise SystemExit(f"OVERLAP at {c}: {p.get('title', p['type'])} vs {occupied[c]}")
             occupied[c] = p.get("title", p["type"])
 
-out = "/Users/basel/Personal/open_webui_exporter/grafana/dashboard.json"
-with open(out, "w") as f:
-    json.dump(dashboard, f, indent=2)
-print(f"OK: {len(panels)} panels, no overlaps. Wrote {out}")
+# --- catalog variant -------------------------------------------------------
+# grafana.com's uploader rejects any dashboard lacking an `__inputs` block as
+# "Old dashboard JSON format" regardless of schemaVersion, so the catalog copy
+# declares the datasource as an import-time input rather than pinning it to this
+# repo's provisioned uid. Same panels, different datasource wiring.
+GRAFANA_MIN_VERSION = "10.3.0"  # stat's showPercentChange option lands here
+
+PLUGIN_NAMES = {"stat": "Stat", "bargauge": "Bar gauge", "barchart": "Bar chart",
+                "timeseries": "Time series", "piechart": "Pie chart", "table": "Table"}
+
+
+def catalog_variant(d):
+    used = sorted({p["type"] for p in d["panels"]} - {"row"})
+    missing = [t for t in used if t not in PLUGIN_NAMES]
+    if missing:
+        raise SystemExit(f"add {missing} to PLUGIN_NAMES so __requires stays complete")
+    pub = {
+        "__inputs": [{"name": "DS_PROMETHEUS", "label": "Prometheus",
+                      "description": "Prometheus instance scraping the Open WebUI exporter",
+                      "type": "datasource", "pluginId": "prometheus",
+                      "pluginName": "Prometheus"}],
+        "__requires": [
+            {"type": "grafana", "id": "grafana", "name": "Grafana",
+             "version": GRAFANA_MIN_VERSION},
+            {"type": "datasource", "id": "prometheus", "name": "Prometheus",
+             "version": "1.0.0"},
+        ] + [{"type": "panel", "id": t, "name": PLUGIN_NAMES[t], "version": ""}
+             for t in used],
+    }
+    pub.update({k: v for k, v in d.items() if k != "uid"})  # importer mints its own uid
+    pub["id"] = None
+    # __inputs supplies DS_PROMETHEUS at import time, so the pinned template var
+    # must not ship — its uid only exists in this repo's provisioned Grafana.
+    pub["templating"] = {"list": []}
+    return pub
+
+
+here = os.path.dirname(os.path.abspath(__file__))
+for name, doc in (("dashboard.json", dashboard),
+                  ("dashboard.grafana-com.json", catalog_variant(dashboard))):
+    with open(os.path.join(here, name), "w") as f:
+        json.dump(doc, f, indent=2)
+    print(f"OK: {len(panels)} panels, no overlaps. Wrote {os.path.join(here, name)}")
