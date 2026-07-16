@@ -1,6 +1,9 @@
 # Secrets — never commit the real env (use .env.example as the template)
 .env
 
+# Your filled-in price sheet (commit model_prices.example.csv, not this)
+model_prices.csv
+
 # macOS
 .DS_Store
 

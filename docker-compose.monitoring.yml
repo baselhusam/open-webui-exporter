@@ -44,6 +44,16 @@ services:
       OPENWEBUI_API_KEY: ${OPENWEBUI_API_KEY:?set OPENWEBUI_API_KEY in .env}
       POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-30}
       EXPORTER_PORT: "9090"
+      # Point at the mounted CSV to override the built-in price table. Empty by
+      # default, so the image's built-in prices are used until you opt in.
+      MODEL_PRICES_CSV: ${MODEL_PRICES_CSV:-}
+    volumes:
+      # Your host price sheet, read-only. Defaults to the shipped example so
+      # `up` never fails on a missing file; it's only *read* when MODEL_PRICES_CSV
+      # above points at it. To use custom prices, in .env set
+      #   MODEL_PRICES_CSV_HOST=./model_prices.csv
+      #   MODEL_PRICES_CSV=/etc/openwebui-exporter/model_prices.csv
+      - ${MODEL_PRICES_CSV_HOST:-./model_prices.example.csv}:/etc/openwebui-exporter/model_prices.csv:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
 

@@ -102,10 +102,25 @@ def collect_chats_stats(session, base_url, user_map=None):
                 # differently; accept either spelling.
                 in_tok = usage.get("input_tokens") or usage.get("prompt_tokens") or 0
                 out_tok = usage.get("output_tokens") or usage.get("completion_tokens") or 0
+                # Cached-prompt tokens, when the backend reports them (OpenAI
+                # nests them under prompt_tokens_details; Anthropic-compat uses
+                # flat keys). Priced at the model's cache rate in cost_for.
+                details = usage.get("prompt_tokens_details") or {}
+                cache_read_tok = (
+                    details.get("cached_tokens")
+                    or usage.get("cache_read_input_tokens")
+                    or usage.get("cached_tokens")
+                    or 0
+                )
+                cache_write_tok = (
+                    usage.get("cache_creation_input_tokens")
+                    or usage.get("cache_write_input_tokens")
+                    or 0
+                )
                 if in_tok or out_tok:
                     model_in[model_id] = model_in.get(model_id, 0) + in_tok
                     model_out[model_id] = model_out.get(model_id, 0) + out_tok
-                    spend = cost_for(model_id, in_tok, out_tok)
+                    spend = cost_for(model_id, in_tok, out_tok, cache_read_tok, cache_write_tok)
                     model_cost[model_id] = model_cost.get(model_id, 0.0) + spend
                     if owner:
                         user_cost[owner] = user_cost.get(owner, 0.0) + spend
@@ -146,9 +161,15 @@ def collect_chats_stats(session, base_url, user_map=None):
         MODEL_INPUT_TOKENS_TOTAL.labels(model=model_id).set(model_in.get(model_id, 0))
         MODEL_OUTPUT_TOKENS_TOTAL.labels(model=model_id).set(model_out.get(model_id, 0))
         MODEL_ESTIMATED_COST_USD.labels(model=model_id).set(model_cost[model_id])
-        input_per_1m, output_per_1m = price_for(model_id)
-        MODEL_PRICE_USD_PER_1M.labels(model=model_id, token_type="input").set(input_per_1m)
-        MODEL_PRICE_USD_PER_1M.labels(model=model_id, token_type="output").set(output_per_1m)
+        p = price_for(model_id)
+        MODEL_PRICE_USD_PER_1M.labels(model=model_id, token_type="input").set(p.input)
+        MODEL_PRICE_USD_PER_1M.labels(model=model_id, token_type="output").set(p.output)
+        # Only surface cache rates for models that actually have them, so the
+        # rate-card panel isn't padded with zero rows for cache-less models.
+        if p.cache_read:
+            MODEL_PRICE_USD_PER_1M.labels(model=model_id, token_type="cache_read").set(p.cache_read)
+        if p.cache_write:
+            MODEL_PRICE_USD_PER_1M.labels(model=model_id, token_type="cache_write").set(p.cache_write)
 
     # Users beyond page 1 of /api/v1/users/ aren't in user_map (known pagination
     # gap); fall back to the raw id rather than dropping their spend.

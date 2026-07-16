@@ -24,7 +24,8 @@ OPENWEBUI_API_KEY=<your key>
 POLL_INTERVAL_SECONDS=30
 EXPORTER_PORT=9090
 
-# Optional: override the per-model price table in pricing.py with a JSON file.
+# Optional: override the per-model price table (see "Pricing" below).
+# MODEL_PRICES_CSV=/etc/openwebui-exporter/model_prices.csv
 # MODEL_PRICES_FILE=/etc/openwebui-exporter/prices.json
 
 # Fallback $/1k-token rate for models with no price-table entry.
@@ -33,6 +34,42 @@ COST_PER_1K_OUTPUT_TOKENS=0
 ```
 
 Use an **admin** API key — several metrics come from admin-wide endpoints (all users' analytics, feedback, and chats).
+
+## Pricing
+
+Open WebUI reports token counts but never what a request cost, so spend is reconstructed from a rate table in [`pricing.py`](pricing.py). It ships with published **list prices (snapshot: July 2026, `$` per 1M tokens)** for the SOTA models from the major providers — OpenAI, Anthropic, Google, xAI, DeepSeek, Alibaba Qwen, Z.ai/GLM, Mistral — each with `input` / `output` and, where the provider offers prompt caching, `cache_read` / `cache_write` rates. The **local Ollama** entries are **mock prices** (real local inference is free) so a local-only instance still shows a non-zero cost signal. Lookup is exact-match first, then longest prefix, so `gpt-4o-2024-11-20` resolves to the `gpt-4o` row.
+
+Published prices drift and your negotiated rates may differ, so **override the table without touching code** — both sources merge on top of the built-in defaults, and only the models you list change:
+
+**CSV price sheet (recommended, Excel-friendly).** Copy the template and edit it:
+
+```bash
+cp model_prices.example.csv model_prices.csv   # then edit in Excel / any editor
+```
+
+The template ([`model_prices.example.csv`](model_prices.example.csv)) documents every column:
+
+| column | meaning |
+|--------|---------|
+| `model` | model id exactly as Open WebUI reports it, e.g. `gpt-5.6`, `claude-opus-4-8` (prefix-matched, so `gpt-4o` also covers `gpt-4o-2024-11-20`) |
+| `provider` | free-text label (`openai`, `anthropic`, …) — optional |
+| `input_per_1m` | `$` per 1M prompt tokens **(required)** |
+| `output_per_1m` | `$` per 1M completion tokens **(required)** |
+| `cache_read_per_1m` | `$` per 1M cached-prompt tokens on a cache hit — `0` if n/a |
+| `cache_write_per_1m` | `$` per 1M tokens to write the prompt cache — `0` if n/a |
+
+Point the exporter at it with `MODEL_PRICES_CSV=/path/to/model_prices.csv`. **With Docker Compose**, set two vars in `.env` — the host path to mount and the in-container path to read:
+
+```
+MODEL_PRICES_CSV_HOST=./model_prices.csv
+MODEL_PRICES_CSV=/etc/openwebui-exporter/model_prices.csv
+```
+
+(The compose file mounts `MODEL_PRICES_CSV_HOST` read-only into the exporter; it defaults to the shipped example so `up` never fails on a missing file, and the sheet is only *read* when `MODEL_PRICES_CSV` points at it.)
+
+**JSON file** (alternative): `MODEL_PRICES_FILE` pointing at `{"gpt-4o": [2.50, 10.00], "llama3.2:1b": [0, 0]}` — two values, or four to include `[input, output, cache_read, cache_write]`.
+
+When a backend reports cached prompt tokens (e.g. `prompt_tokens_details.cached_tokens`), that portion is billed at the model's `cache_read` rate instead of full input. In Grafana the rates surface in the **Model Rate Card** panel (`input`/`output`, plus `cache_read`/`cache_write` for models that have them).
 
 ## 3. Run standalone (using the existing `.venv`)
 
@@ -158,7 +195,7 @@ removes exactly that and leaves real data untouched.
 
 - `/api/v1/users/` is fetched as a single page; on instances with very large user counts, pagination may need to be added to `collectors/users.py`.
 - **Endpoint scope:** analytics and feedback are admin-wide, but `/api/v1/chats/stats/usage` is scoped to the *calling* user. To get true cross-user totals, `collectors/chats.py` aggregates chat/message/tag/response-time stats from the admin-wide `/api/v1/chats/all/db` (a heavier per-poll fetch of full chat objects). Per-user token counts come from `/api/v1/analytics/users`; `/api/v1/analytics/models` has no per-model token data.
-- **Cost is estimated, not reported.** Open WebUI exposes token counts but never prices, so `pricing.py` holds a per-model rate table (`$/1M` tokens) and `collectors/chats.py` applies it to each assistant message's `usage` block. The local-Ollama entries in that table are **mock prices** — invented so a local-only instance still produces a non-zero cost signal; replace them (or set `MODEL_PRICES_FILE`) before treating the numbers as real. In Grafana the prices surface in the **Cost & Spend** row: *Model Rate Card* (the table itself), *Spend by Model*, *Cumulative Spend*, plus the *Est. Spend* hero tile and *Top Users by Est. Cost*.
+- **Cost is estimated, not reported.** Open WebUI exposes token counts but never prices, so `pricing.py` holds a per-model rate table (`$/1M` tokens) and `collectors/chats.py` applies it to each assistant message's `usage` block. The local-Ollama entries in that table are **mock prices** — invented so a local-only instance still produces a non-zero cost signal; replace them (see [Pricing](#pricing) — a CSV price sheet or `MODEL_PRICES_FILE`) before treating the numbers as real. In Grafana the prices surface in the **Cost & Spend** row: *Model Rate Card* (the table itself), *Spend by Model*, *Cumulative Spend*, plus the *Est. Spend* hero tile and *Top Users by Est. Cost*.
 - Feedback counts (`collectors/feedback.py`) are aggregated from `/api/v1/evaluations/feedbacks/all/export` (admin-only), tallying each `rating` record's `+1`/`-1` per model (and a per-model satisfaction ratio). The Arena `/api/v1/evaluations/leaderboard` stays empty until users run side-by-side battles (separate from thumbs up/down), so that panel shows "No arena battles yet" until then.
 - The exporter tolerates individual endpoint failures: a bad API key or one down endpoint increments `openwebui_exporter_scrape_errors_total{endpoint=...}` and sets `openwebui_exporter_scrape_success` to 0, rather than crashing the process.
 
