@@ -295,6 +295,8 @@ pre code { font-family: var(--mono); font-size: 12.5px; line-height: 1.7; color:
 footer { border-top: 1px solid var(--border); padding: 40px 0; }
 .foot-inner { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 18px; }
 .foot-inner .brand small { font-size: 12px; }
+.foot-author { color: var(--text-2); border-bottom: 1px solid var(--border-hi); transition: color .2s, border-color .2s; }
+.foot-author:hover { color: var(--green); border-color: var(--green); }
 .foot-links { display: flex; gap: 22px; }
 .foot-links a { color: var(--muted); font-size: 14px; transition: color .2s; }
 .foot-links a:hover { color: var(--text); }
@@ -348,6 +350,9 @@ footer { border-top: 1px solid var(--border); padding: 40px 0; }
         <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/></svg>
         <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
       </button>
+      <a class="icon-btn" href="https://baselhusam.com" aria-label="Basel Husam — portfolio" title="Basel Husam — portfolio">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><path d="M2.5 12h19M12 2.5c2.4 2.6 3.6 5.8 3.6 9.5s-1.2 6.9-3.6 9.5c-2.4-2.6-3.6-5.8-3.6-9.5S9.6 5.1 12 2.5z"/></svg>
+      </a>
       <a class="icon-btn" href="https://github.com/baselhusam/open-webui-exporter" aria-label="GitHub repository" title="GitHub">
         <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.2.8-.5v-2c-3.2.7-3.9-1.4-3.9-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.3c0 .3.2.6.8.5 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z"/></svg>
       </a>
@@ -639,16 +644,17 @@ footer { border-top: 1px solid var(--border); padding: 40px 0; }
 <!-- FOOTER -->
 <footer>
   <div class="wrap foot-inner">
-    <a class="brand" href="#top">
-      <span class="logomark">
+    <div class="brand">
+      <a class="logomark" href="#top" aria-label="Back to top">
         <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
           <path d="M8 58 C24 54 32 40 48 46 S72 62 92 50" fill="none" stroke="#F2A900" stroke-width="8" stroke-linecap="round"/>
           <path d="M8 76 C24 72 32 60 48 66 S72 78 92 68" fill="none" stroke="#73BF69" stroke-width="8" stroke-linecap="round"/>
         </svg>
-      </span>
-      <span>Open WebUI Exporter<br><small>MIT © Basel Husam</small></span>
-    </a>
+      </a>
+      <span>Open WebUI Exporter<br><small>MIT © <a class="foot-author" href="https://baselhusam.com">Basel Husam</a></small></span>
+    </div>
     <div class="foot-links">
+      <a href="https://baselhusam.com">Portfolio</a>
       <a href="https://github.com/baselhusam/open-webui-exporter">GitHub</a>
       <a href="https://github.com/baselhusam/open-webui-exporter#readme">README</a>
       <a href="https://github.com/baselhusam/open-webui-exporter/blob/main/LICENSE">License</a>
