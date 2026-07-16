@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <clipPath id="r"><rect width="512" height="512" rx="112"></rect></clipPath>
+    <linearGradient id="fill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#73BF69" stop-opacity=".55"></stop>
+      <stop offset="1" stop-color="#73BF69" stop-opacity="0"></stop>
+    </linearGradient>
+  </defs>
+  <g clip-path="url(#r)">
+    <rect width="512" height="512" fill="#0b0e14"></rect>
+    <g stroke="#ffffff" stroke-opacity="0.03" stroke-width="1">
+      <line x1="64" y1="0" x2="64" y2="512"></line><line x1="128" y1="0" x2="128" y2="512"></line><line x1="192" y1="0" x2="192" y2="512"></line><line x1="256" y1="0" x2="256" y2="512"></line><line x1="320" y1="0" x2="320" y2="512"></line><line x1="384" y1="0" x2="384" y2="512"></line><line x1="448" y1="0" x2="448" y2="512"></line><line x1="512" y1="0" x2="512" y2="512"></line>
+      <line x1="0" y1="64" x2="512" y2="64"></line><line x1="0" y1="128" x2="512" y2="128"></line><line x1="0" y1="192" x2="512" y2="192"></line><line x1="0" y1="256" x2="512" y2="256"></line><line x1="0" y1="320" x2="512" y2="320"></line><line x1="0" y1="384" x2="512" y2="384"></line><line x1="0" y1="448" x2="512" y2="448"></line><line x1="0" y1="512" x2="512" y2="512"></line>
+    </g>
+    <path d="M56 356 L146 316 L210 372 L296 208 L372 276 L436 196 L436 416 L56 416 Z" fill="url(#fill)"></path>
+    <path d="M56 356 L146 316 L210 372 L296 208 L372 276 L436 196" fill="none" stroke="#73BF69" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"></path>
+    <circle cx="436" cy="196" r="30" fill="#0b0e14" stroke="#F2A900" stroke-width="18"></circle>
+  </g>
+</svg>
